@@ -139,3 +139,13 @@ chart/position-history databases already on the device.
   done step 5 yet (`charts/*.mbtiles` are not in git). Confirm the files
   exist and are readable by the `metarboard` user
   (`ls -la /opt/metarboard/charts`), then restart the service.
+- **Wrong chart region showing, or none at all:** there's no manual chart
+  picker on the display anymore — the app always shows the single regional
+  chart whose center is geographically closest to the home airport set in
+  `/admin`. If nothing shows, double-check the home airport is set and is a
+  real ICAO/FAA code the airports dataset recognizes.
+- **Radar toggled on in `/admin` but nothing appears:** this is usually not
+  a bug — the NEXRAD tiles are transparent wherever there's no precipitation,
+  so a clear-weather view can legitimately look empty. Confirm it's actually
+  requesting tiles by checking the browser's Network tab for requests to
+  `mesonet.agron.iastate.edu`.

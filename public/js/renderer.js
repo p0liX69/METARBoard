@@ -4,14 +4,18 @@ if (!localStorage.getItem("homeAirport")) {
     localStorage.setItem("homeAirport", "KHGR");
 }
 
+// Guards against persisting/restoring the map's placeholder [0,0] view
+// that exists before any real data has loaded - see centerOnHomeAirport().
+let hasCenteredOnHomeAirport = false;
+
 /**
  * Center on the saved home airport. If a previous map view (center/zoom)
- * was saved and forceRecenter is not set, that view is restored instead so
- * routine calls (e.g. after a settings-triggered reload) don't clobber
- * whatever the user last panned/zoomed to. Pass forceRecenter=true for
- * deliberate "go to this airport now" actions (e.g. the Set button).
+ * was saved, that view is restored instead so routine calls (e.g. after a
+ * settings-triggered reload) don't clobber whatever the user last panned/
+ * zoomed to. loadInitialData() clears the saved view when the home airport
+ * itself changes, so this still moves to the new location in that case.
  */
-function centerOnHomeAirport(forceRecenter = false) {
+function centerOnHomeAirport() {
     const home = localStorage.getItem("homeAirport");
     if (!home || !airportNameKeymap.has(home)) return;
 
@@ -23,8 +27,14 @@ function centerOnHomeAirport(forceRecenter = false) {
     });
 
     if (apt) {
-        const savedView = !forceRecenter && JSON.parse(localStorage.getItem("lastMapView") || "null");
-        if (savedView && savedView.center && typeof savedView.zoom === "number") {
+        hasCenteredOnHomeAirport = true;
+        const savedView = JSON.parse(localStorage.getItem("lastMapView") || "null");
+        const hasValidSavedView = savedView
+            && Array.isArray(savedView.center)
+            && savedView.center.length === 2
+            && savedView.center.every(Number.isFinite)
+            && Number.isFinite(savedView.zoom);
+        if (hasValidSavedView) {
             map.getView().setCenter(savedView.center);
             map.getView().setZoom(savedView.zoom);
         }
@@ -36,36 +46,37 @@ function centerOnHomeAirport(forceRecenter = false) {
 
         metarVectorLayer.setVisible(true);
 
-        // Enable sectional charts for the home region and nearby
-        const lat = apt.getGeometry().getCoordinates()[1];
-        const lon = apt.getGeometry().getCoordinates()[0];
-        const coord = ol.proj.toLonLat([lon, lat]);
-
-        // Define a search buffer of ~2 degrees lat/lon (~200km)
-        const buffer = 2.0;
-        const minLon = coord[0] - buffer;
-        const maxLon = coord[0] + buffer;
-        const minLat = coord[1] - buffer;
-        const maxLat = coord[1] + buffer;
-
-        const bufferedExtent = ol.proj.transformExtent(
-            [minLon, minLat, maxLon, maxLat],
-            'EPSG:4326',
-            'EPSG:3857'
-        );
+        // Enable the single regional chart whose bounds are centered
+        // closest to the home airport. Sectional bounding boxes overlap
+        // generously at their edges, so an "does it overlap" check tends to
+        // match several adjacent regions at once; nearest-center avoids that.
+        const homeCoord = apt.getGeometry().getCoordinates();
+        let closestChartLayer = null;
+        let closestDistance = Infinity;
 
         map.getLayers().forEach(layer => {
             const title = layer.get("title");
             if (!title || !title.toLowerCase().includes("chart")) return;
 
             const lowerTitle = title.toLowerCase();
+            layer.setVisible(false);
             // Nationwide reference charts always cover any home airport by
             // design; leave them for manual toggling instead of auto-stacking.
             if (lowerTitle.includes("enroute") || lowerTitle.includes("wall planning")) return;
 
             const chartExtent = layer.getExtent();
-            layer.setVisible(!!chartExtent && ol.extent.intersects(chartExtent, bufferedExtent));
+            if (!chartExtent) return;
+            const chartCenter = ol.extent.getCenter(chartExtent);
+            const distance = Math.hypot(chartCenter[0] - homeCoord[0], chartCenter[1] - homeCoord[1]);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestChartLayer = layer;
+            }
         });
+
+        if (closestChartLayer) {
+            closestChartLayer.setVisible(true);
+        }
         setTimeout(() => {
             const metarFeature = metarFeatures.getArray().find(f => {
                 const metar = f.get("metar");
@@ -181,14 +192,26 @@ let lastcriteria = "allregions";
  * Map objects used for various keyname lookups
  */
 let airportNameKeymap = new Map();
-fetch("us_airports.json")
-  .then(res => res.json())
-  .then(data => {
-      return data;
-  })
-  .then(data => {
-      processAirports({ airports: data });
-  });
+
+const AIRPORTS_RETRY_BASE_DELAY_MS = 1000;
+const AIRPORTS_RETRY_MAX_DELAY_MS = 30000;
+let airportsRetryAttempts = 0;
+
+function loadAirports() {
+    fetch("us_airports.json")
+        .then(res => res.json())
+        .then(data => {
+            airportsRetryAttempts = 0;
+            processAirports({ airports: data });
+        })
+        .catch(err => {
+            const delay = Math.min(AIRPORTS_RETRY_BASE_DELAY_MS * (2 ** airportsRetryAttempts), AIRPORTS_RETRY_MAX_DELAY_MS);
+            airportsRetryAttempts++;
+            console.log(`Failed to load us_airports.json, retrying in ${delay}ms:`, err);
+            setTimeout(loadAirports, delay);
+        });
+}
+loadAirports();
 let tafFieldKeymap = new Map();
 let metarFieldKeymap = new Map();
 let weatherAcronymKeymap = new Map();
@@ -320,7 +343,17 @@ async function loadInitialData() {
         currentZoom = settings.startupzoom;
 
         if (settings.homeAirport) {
+            const previousHomeAirport = localStorage.getItem("homeAirport");
+            if (previousHomeAirport && previousHomeAirport !== settings.homeAirport) {
+                // Home airport changed (e.g. via /admin) - forget the old
+                // saved view so centerOnHomeAirport() moves to the new one
+                // instead of restoring wherever the map was previously.
+                localStorage.removeItem("lastMapView");
+            }
             localStorage.setItem("homeAirport", settings.homeAirport);
+        }
+        if (settings.animatedwxurl) {
+            animatedWxTileSource.setUrl(settings.animatedwxurl);
         }
         if (settings.showRadarByDefault) {
             animatedWxTileLayer.setVisible(true);
@@ -640,7 +673,6 @@ function processAirports(jsonobj) {
  
         const savedHome = localStorage.getItem("homeAirport");
         if (savedHome && airportNameKeymap.has(savedHome)) {
-            document.getElementById("homeIcao").value = savedHome;
             centerOnHomeAirport();
         }
 
@@ -681,36 +713,6 @@ function processAirports(jsonobj) {
 regionselect.addEventListener('change', (event) => {
     lastcriteria = event.target.value;
     selectFeaturesByCriteria();
-});
-
-document.addEventListener("DOMContentLoaded", () => {
-    const homeInput = document.getElementById("homeIcao");
-    const setHomeBtn = document.getElementById("setHomeBtn");
-
-    if (homeInput && setHomeBtn) {
-        const savedHome = localStorage.getItem("homeAirport");
-        if (savedHome) {
-            homeInput.value = savedHome;
-        }
-
-        setHomeBtn.addEventListener("click", () => {
-            const rawInput = homeInput.value || "";
-            const icao = rawInput.trim().toUpperCase();
-            if (!icao || !airportNameKeymap.has(icao)) {
-                alert("Airport not found.");
-                return;
-            }
-            localStorage.setItem("homeAirport", icao);
-            centerOnHomeAirport(true);
-            fetch(`${URL_SERVER}/savesettings`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ homeAirport: icao })
-            }).catch(err => console.error("Failed to save home airport:", err));
-        });
-    } else {
-        console.error("Missing home input or button elements.");
-    }
 });
 
 /**
@@ -819,8 +821,8 @@ const scaleLine = new ol.control.ScaleLine({
 const map = new ol.Map({
     target: 'map',
     view: new ol.View({
-        center: viewposition,        
-        zoom: settings.startupzoom,
+        center: viewposition,
+        zoom: settings.startupzoom || 9,
         enableRotation: false,
         minZoom: 1,
         maxZoom: 22
@@ -847,10 +849,11 @@ if (settings.usestratux) {
  * Event to handle scaling of feature images
  */
 map.on('moveend', function(e) {
-    localStorage.setItem("lastMapView", JSON.stringify({
-        center: map.getView().getCenter(),
-        zoom: map.getView().getZoom()
-    }));
+    const moveendCenter = map.getView().getCenter();
+    const moveendZoom = map.getView().getZoom();
+    if (hasCenteredOnHomeAirport && Array.isArray(moveendCenter) && moveendCenter.every(Number.isFinite) && Number.isFinite(moveendZoom)) {
+        localStorage.setItem("lastMapView", JSON.stringify({ center: moveendCenter, zoom: moveendZoom }));
+    }
 
     let newZoom = map.getView().getZoom();
     let inAnimation = false;
@@ -1713,10 +1716,10 @@ metarVectorSource = new ol.source.Vector({
 metarVectorLayer = new ol.layer.Vector({
     title: "Metars",
     source: metarVectorSource,
-    visible: false,
+    visible: true,
     extent: extent,
     zIndex: 12
-}); 
+});
 
 airportVectorSource = new ol.source.Vector({
     features: airportFeatures
@@ -1833,12 +1836,6 @@ function addChartLayers() {
 }
 
 
-
-const layerSwitcher = new LayerSwitcher({
-    tipLabel: 'Layers',
-    groupSelectStyle: 'children'
-});
-map.addControl(layerSwitcher);
 
 airportVectorLayer.on('change:visible', () => {
     let visible = airportVectorLayer.get('visible');
@@ -1962,7 +1959,7 @@ setInterval(() => {
  * Start the weather radar animation
  */
 const playWeatherRadar = function () {
-    stop();
+    stopWeatherRadar();
     animationId = window.setInterval(setTime, 1000 / frameRate);
 };
 
@@ -3533,55 +3530,3 @@ function cToF(celsius) {
     }
 }
 
-// Create play/pause buttons for ATC audio
-const audioControls = document.createElement("div");
-audioControls.style.position = "absolute";
-audioControls.style.top = "85px";    // right below the clock
-audioControls.style.right = "10px";  // align to the right
-audioControls.style.backgroundColor = "rgba(0,0,0,0.7)";
-audioControls.style.color = "white";
-audioControls.style.padding = "10px 14px";
-audioControls.style.borderRadius = "5px";
-audioControls.style.fontFamily = "sans-serif";
-audioControls.style.zIndex = "1000";
-
-const atcPlayButton = document.createElement("button");
-atcPlayButton.textContent = "Play ATC";
-atcPlayButton.style.marginRight = "6px";
-atcPlayButton.onclick = () => {
-    if (!document.getElementById("atcFrame")) {
-        const atcFrame = document.createElement("iframe");
-        atcFrame.id = "atcFrame";
-        atcFrame.src = "https://www.liveatc.net/hlisten.php?mount=kfdk2&icao=kfdk";
-        atcFrame.style.position = "absolute";
-        atcFrame.style.top = "95px";
-        atcFrame.style.right = "10px";
-        atcFrame.style.width = "1px";
-        atcFrame.style.height = "1px";
-        atcFrame.style.opacity = "0";
-        atcFrame.style.border = "none";
-        document.body.appendChild(atcFrame);
-        statusText.textContent = "Status: Playing";
-    }
-};
-
-const atcPauseButton = document.createElement("button");
-atcPauseButton.textContent = "Pause ATC";
-atcPauseButton.onclick = () => {
-    const existing = document.getElementById("atcFrame");
-    if (existing) {
-        existing.remove();
-        statusText.textContent = "Status: Paused";
-    }
-};
-
-const statusText = document.createElement("span");
-statusText.id = "atcStatus";
-statusText.style.marginLeft = "10px";
-statusText.style.fontWeight = "bold";
-statusText.textContent = "Status: Paused";
-
-audioControls.appendChild(atcPlayButton);
-audioControls.appendChild(atcPauseButton);
-audioControls.appendChild(statusText);
-document.body.appendChild(audioControls);

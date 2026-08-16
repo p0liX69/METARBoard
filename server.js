@@ -623,12 +623,22 @@ async function downloadXmlFile(source) {
                     break;
             }
         }
+        else {
+            console.log(`Unexpected status downloading ${source.type}: ${xhr.status}`);
+        }
     };
-    try { 
+    xhr.onerror = () => {
+        console.log(`Network error downloading ${source.type} from ${url}`);
+    };
+    xhr.ontimeout = () => {
+        console.log(`Timed out downloading ${source.type} from ${url}`);
+    };
+    xhr.timeout = 30000;
+    try {
         xhr.send();
     }
     catch (err) {
-        console.log(`Error getting message type ${xmlmessage.type}: ${err}`);
+        console.log(`Error getting message type ${source.type}: ${err}`);
     }
 }
 

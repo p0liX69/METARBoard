@@ -7,17 +7,11 @@
   <title>METAR Board</title>
   <link rel="icon" type="image/x-icon" href="img/favicon.png"/>
   <link rel="stylesheet" href="libs/v6.7.0-dist/ol.css">
-  <link rel="stylesheet" href="css/ol-layerswitcher.css">
   <link rel="stylesheet" href="css/style.css">
   <script src="js/jquery.min.js"></script>
   <script src="js/elm-pep.js"></script>
 </head>  
 <body>
-    <div style="position: absolute; top: 10px; left: 10px; background: white; padding: 6px; z-index: 1000;">
-        Home Airport:
-        <input type="text" id="homeIcao" placeholder="e.g. KFDK" style="width: 70px;" />
-        <button id="setHomeBtn">Set</button>
-    </div>
     <div class="map" id="map"></div>
     <div class="wxbuttons" id="wxbuttons" role="group" aria-label="Animation controls">
         <button id="play" class="wxbutton" type="button">Play</button>
@@ -41,7 +35,6 @@
     <img class="airplane" id="airplane" src="img/airplane.png" alt="">
     <script src="js/jquery.min.js"></script>
     <script src="libs/v6.7.0-dist/ol.js"></script>
-    <script src="js/ol-layerswitcher.js"></script>
     <script src="js/renderer.js"></script>
     <div id="homeMetarBox" class="static-metar-popup">Loading METAR...</div>
 </body>
