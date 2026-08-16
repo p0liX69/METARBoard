@@ -1,16 +1,17 @@
 'use strict';
 
-const OPEN_SKY_API_URL = "https://opensky-network.org/api/states/all";
-
-let OPEN_SKY_USERNAME = "";
-let OPEN_SKY_PASSWORD = "";
-
 if (!localStorage.getItem("homeAirport")) {
     localStorage.setItem("homeAirport", "KHGR");
 }
 
-// Function to center on the saved home airport
-function centerOnHomeAirport() {
+/**
+ * Center on the saved home airport. If a previous map view (center/zoom)
+ * was saved and forceRecenter is not set, that view is restored instead so
+ * routine calls (e.g. after a settings-triggered reload) don't clobber
+ * whatever the user last panned/zoomed to. Pass forceRecenter=true for
+ * deliberate "go to this airport now" actions (e.g. the Set button).
+ */
+function centerOnHomeAirport(forceRecenter = false) {
     const home = localStorage.getItem("homeAirport");
     if (!home || !airportNameKeymap.has(home)) return;
 
@@ -22,35 +23,19 @@ function centerOnHomeAirport() {
     });
 
     if (apt) {
-        const coords = apt.getGeometry().getCoordinates();
-        map.getView().setCenter(coords);
-        map.getView().setZoom(settings.startupzoom || 9);
-        // Automatically check the METARs checkbox if it exists
-        const metarsCheckbox = document.querySelector('input[type="checkbox"][title="Metars"]');
-        if (metarsCheckbox) {
-            metarsCheckbox.checked = true;
-            metarVectorLayer.setVisible(true);
+        const savedView = !forceRecenter && JSON.parse(localStorage.getItem("lastMapView") || "null");
+        if (savedView && savedView.center && typeof savedView.zoom === "number") {
+            map.getView().setCenter(savedView.center);
+            map.getView().setZoom(savedView.zoom);
+        }
+        else {
+            const coords = apt.getGeometry().getCoordinates();
+            map.getView().setCenter(coords);
+            map.getView().setZoom(settings.startupzoom || 9);
         }
 
-        // Automatically check the Animated Weather checkbox if it exists
-        const animatedWxCheckbox = document.querySelector('input[type="checkbox"][title="Animated Weather"]');
-        if (animatedWxCheckbox) {
-            animatedWxCheckbox.checked = true;
-            animatedWxTileLayer.setVisible(true);
-        }
-        // Enable METARs layer
-        if (metarVectorLayer) {
-            metarVectorLayer.setVisible(true);
-            const metarCheckbox = document.querySelector('input[type="checkbox"][title="Metars"]');
-            if (metarCheckbox) metarCheckbox.checked = true;
-        }
-        // Enable animated weather layer
-        if (animatedWxTileLayer) {
-            animatedWxTileLayer.setVisible(true);
-            const wxCheckbox = document.querySelector('input[type="checkbox"][title="Animated Weather"]');
-            if (wxCheckbox) wxCheckbox.checked = true;
-        }
-        
+        metarVectorLayer.setVisible(true);
+
         // Enable sectional charts for the home region and nearby
         const lat = apt.getGeometry().getCoordinates()[1];
         const lon = apt.getGeometry().getCoordinates()[0];
@@ -70,15 +55,16 @@ function centerOnHomeAirport() {
         );
 
         map.getLayers().forEach(layer => {
-            if (layer.get("title") && layer.get("title").toLowerCase().includes("chart")) {
-                const extent = layer.getExtent();
-                const title = layer.get("title").toLowerCase();
-                if (ol.extent.intersects(extent, bufferedExtent)) {
-                    layer.setVisible(true);
-                } else if (title.includes("sectional") || title.includes("chart")) {
-                    layer.setVisible(false);
-                }
-            }
+            const title = layer.get("title");
+            if (!title || !title.toLowerCase().includes("chart")) return;
+
+            const lowerTitle = title.toLowerCase();
+            // Nationwide reference charts always cover any home airport by
+            // design; leave them for manual toggling instead of auto-stacking.
+            if (lowerTitle.includes("enroute") || lowerTitle.includes("wall planning")) return;
+
+            const chartExtent = layer.getExtent();
+            layer.setVisible(!!chartExtent && ol.extent.intersects(chartExtent, bufferedExtent));
         });
         setTimeout(() => {
             const metarFeature = metarFeatures.getArray().find(f => {
@@ -332,8 +318,13 @@ async function loadInitialData() {
         DistanceUnits = settings.distanceunits;
         distanceunit = settings.distanceunit;
         currentZoom = settings.startupzoom;
-        OPEN_SKY_USERNAME = settings.opensky?.username || "";
-        OPEN_SKY_PASSWORD = settings.opensky?.password || "";
+
+        if (settings.homeAirport) {
+            localStorage.setItem("homeAirport", settings.homeAirport);
+        }
+        if (settings.showRadarByDefault) {
+            animatedWxTileLayer.setVisible(true);
+        }
     }
     catch (err) {
         console.log(err);
@@ -354,6 +345,8 @@ async function loadInitialData() {
     catch (err) {
         console.log(err);
     }
+
+    addChartLayers();
 
     try {
         const response = await fetch(URL_GET_HISTORY);
@@ -395,16 +388,15 @@ function connectWebSocket() {
                 switch (message.type) {
                     case MessageTypes.metars.type:
                         processMetars(payload);
-                        const savedHome = localStorage.getItem("homeAirport");
-                        if (savedHome && airportNameKeymap.has(savedHome)) {
-                            centerOnHomeAirport();
-                        }
                         break;
                     case MessageTypes.tafs.type:
                         processTafs(payload);
                         break;
                     case MessageTypes.pireps.type:
                         processPireps(payload);
+                        break;
+                    case "settingsupdated":
+                        location.reload();
                         break;
                 }
             }
@@ -709,7 +701,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             localStorage.setItem("homeAirport", icao);
-            centerOnHomeAirport();
+            centerOnHomeAirport(true);
+            fetch(`${URL_SERVER}/savesettings`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ homeAirport: icao })
+            }).catch(err => console.error("Failed to save home airport:", err));
         });
     } else {
         console.error("Missing home input or button elements.");
@@ -850,6 +847,11 @@ if (settings.usestratux) {
  * Event to handle scaling of feature images
  */
 map.on('moveend', function(e) {
+    localStorage.setItem("lastMapView", JSON.stringify({
+        center: map.getView().getCenter(),
+        zoom: map.getView().getZoom()
+    }));
+
     let newZoom = map.getView().getZoom();
     let inAnimation = false;
     if (currentZoom != newZoom) {
@@ -1702,7 +1704,7 @@ animatedWxTileLayer = new ol.layer.Tile({
     extent: extent,
     source: animatedWxTileSource,
     visible: false,
-    zIndex: 11
+    zIndex: 5
 });
 
 metarVectorSource = new ol.source.Vector({
@@ -1787,49 +1789,56 @@ map.addLayer(pirepVectorLayer);
 //}
 map.addLayer(animatedWxTileLayer);
 
-dblist.reverse();
-Object.entries(dblist).forEach((db) => {
-    let dbname = db[1];
-    let metadata = {};
-    for (var i = 0; i < metadatasets.length; i++) {
-        if (metadatasets[i]["key"] === dbname) {
-            metadata = metadatasets[i]["value"];
-            break;
-        } 
-    }
+function addChartLayers() {
+    dblist.reverse();
+    Object.entries(dblist).forEach((db) => {
+        let dbname = db[1];
+        let metadata = {};
+        for (var i = 0; i < metadatasets.length; i++) {
+            if (metadatasets[i]["key"] === dbname) {
+                metadata = metadatasets[i]["value"];
+                break;
+            }
+        }
 
-    let zOrder = 10;
-    if (dbname === "terminal") {
-        zOrder = 12;
-    }
+        let zOrder = 10;
+        if (dbname === "terminal") {
+            zOrder = 12;
+        }
 
-    if (JSON.stringify(metadata) != "{}") {
-        let dburl = URL_GET_TILE.replace("{dbname}", dbname);
-        var layer = new ol.layer.Tile({
-            title: metadata.description,
-            type: metadata.type,
-            source: new ol.source.XYZ({
-                url: dburl,
-                maxzoom: metadata.maxzoom,
-                minzoom: metadata.minzoom,
-                attributions: settings.showattribution == true ? metadata.attribution : "",
-                attributionsCollapsible: false
-            }),
-            visible: false,
-            extent: extent,
-            zIndex: zOrder
-        });
-        map.addLayer(layer);
-    } 
-});
+        if (JSON.stringify(metadata) != "{}") {
+            let dburl = URL_GET_TILE.replace("{dbname}", dbname);
+            let layerExtent = extent;
+            if (metadata.bounds) {
+                const bounds4326 = metadata.bounds.split(",").map(Number);
+                layerExtent = ol.proj.transformExtent(bounds4326, 'EPSG:4326', 'EPSG:3857');
+            }
+            var layer = new ol.layer.Tile({
+                title: metadata.description,
+                type: metadata.type,
+                source: new ol.source.XYZ({
+                    url: dburl,
+                    maxzoom: metadata.maxzoom,
+                    minzoom: metadata.minzoom,
+                    attributions: settings.showattribution == true ? metadata.attribution : "",
+                    attributionsCollapsible: false
+                }),
+                visible: false,
+                extent: layerExtent,
+                zIndex: zOrder
+            });
+            map.addLayer(layer);
+        }
+    });
+}
 
 
 
 const layerSwitcher = new LayerSwitcher({
-    tipLabel: 'Layers', 
+    tipLabel: 'Layers',
     groupSelectStyle: 'children'
 });
-// map.addControl(layerSwitcher);
+map.addControl(layerSwitcher);
 
 airportVectorLayer.on('change:visible', () => {
     let visible = airportVectorLayer.get('visible');
@@ -1919,11 +1928,9 @@ setInterval(() => {
     const bounds = map.getView().calculateExtent(map.getSize());
     const [minX, minY, maxX, maxY] = ol.proj.transformExtent(bounds, 'EPSG:3857', 'EPSG:4326');
 
-    const url = `https://opensky-network.org/api/states/all?lamin=${minY}&lomin=${minX}&lamax=${maxY}&lomax=${maxX}`;
-    const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa(`${OPEN_SKY_USERNAME}:${OPEN_SKY_PASSWORD}`));
+    const url = `${URL_SERVER}/opensky/states?lamin=${minY}&lomin=${minX}&lamax=${maxY}&lomax=${maxX}`;
 
-    fetch(url, { headers })
+    fetch(url)
         .then(res => res.json())
         .then(data => {
             if (!data || !data.states) return;
@@ -3525,57 +3532,6 @@ function cToF(celsius) {
         return Math.round(celsius * 9 / 5 + 32);
     }
 }
-
-function fetchOpenSkyTraffic() {
-    const BBOX = [-125.0, 25.0, -66.0, 49.0]; // continental US
-    const url = `https://opensky-network.org/api/states/all?lamin=${BBOX[1]}&lomin=${BBOX[0]}&lamax=${BBOX[3]}&lomax=${BBOX[2]}`;
-  
-    fetch(url)
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-        return res.json();
-      })
-      .then(data => {
-        const aircraft = data.states || [];
-  
-        trafficFeatures.clear();
-  
-        aircraft.forEach(state => {
-          const lon = state[5];
-          const lat = state[6];
-          const heading = state[10] || 0;
-  
-          if (lat && lon) {
-            const icon = new ol.style.Icon({
-              src: `${URL_SERVER}/img/airplane_white.svg`,
-              crossOrigin: 'anonymous',
-              scale: 0.07,
-              rotation: heading * Math.PI / 180,
-            });
-  
-            const feature = new ol.Feature({
-              geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
-              datatype: "traffic"
-            });
-  
-            feature.setStyle(new ol.style.Style({ image: icon }));
-            trafficFeatures.push(feature);
-          }
-        });
-  
-        trafficVectorSource.clear();
-        trafficVectorSource.addFeatures(trafficFeatures.getArray());
-      })
-      .catch(err => {
-        console.error("OpenSky error:", err);
-      });
-  }
-  
-  // Call every 15 seconds
-  setInterval(fetchOpenSkyTraffic, 30000);
-  fetchOpenSkyTraffic();
 
 // Create play/pause buttons for ATC audio
 const audioControls = document.createElement("div");

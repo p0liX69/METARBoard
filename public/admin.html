@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>METAR Board - Admin</title>
+  <link rel="icon" type="image/x-icon" href="img/favicon.png"/>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 480px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    h1 {
+      font-size: 20px;
+    }
+    label {
+      display: block;
+      margin-top: 20px;
+      font-weight: bold;
+    }
+    input[type="text"] {
+      font-size: 18px;
+      padding: 6px;
+      width: 100px;
+      margin-top: 6px;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+    }
+    .checkbox-row input {
+      width: 24px;
+      height: 24px;
+    }
+    .checkbox-row label {
+      margin: 0;
+      font-weight: normal;
+    }
+    button {
+      margin-top: 28px;
+      font-size: 18px;
+      padding: 10px 24px;
+    }
+    #status {
+      margin-top: 16px;
+      font-weight: bold;
+    }
+    #status.error {
+      color: #b00020;
+    }
+    #status.success {
+      color: #1a7f37;
+    }
+  </style>
+</head>
+<body>
+  <h1>METAR Board Admin</h1>
+  <p>Changes here are pushed to the display immediately - it will refresh on its own.</p>
+
+  <label for="homeAirport">Home Airport</label>
+  <input type="text" id="homeAirport" placeholder="e.g. KFDK">
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="showRadarByDefault">
+    <label for="showRadarByDefault">Show live radar by default</label>
+  </div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="useOSMonlinemap">
+    <label for="useOSMonlinemap">Show online map layer</label>
+  </div>
+
+  <button id="saveBtn">Save</button>
+  <div id="status"></div>
+
+  <script>
+    const homeAirportInput = document.getElementById("homeAirport");
+    const showRadarCheckbox = document.getElementById("showRadarByDefault");
+    const useOSMCheckbox = document.getElementById("useOSMonlinemap");
+    const saveBtn = document.getElementById("saveBtn");
+    const statusEl = document.getElementById("status");
+
+    function setStatus(message, isError) {
+      statusEl.textContent = message;
+      statusEl.className = isError ? "error" : "success";
+    }
+
+    fetch("/getsettings")
+      .then(res => res.json())
+      .then(settings => {
+        homeAirportInput.value = settings.homeAirport || "";
+        showRadarCheckbox.checked = !!settings.showRadarByDefault;
+        useOSMCheckbox.checked = !!settings.useOSMonlinemap;
+      })
+      .catch(err => setStatus("Failed to load current settings: " + err.message, true));
+
+    saveBtn.addEventListener("click", () => {
+      const icao = homeAirportInput.value.trim().toUpperCase();
+      if (!/^[A-Z0-9]{3,4}$/.test(icao)) {
+        setStatus("Home airport must be a 3-4 character ICAO/FAA code.", true);
+        return;
+      }
+
+      fetch("/savesettings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          homeAirport: icao,
+          showRadarByDefault: showRadarCheckbox.checked,
+          useOSMonlinemap: useOSMCheckbox.checked
+        })
+      })
+        .then(res => {
+          if (!res.ok) return res.json().then(body => { throw new Error(body.error || "Save failed"); });
+          return res.json();
+        })
+        .then(() => setStatus("Saved - the display will refresh shortly.", false))
+        .catch(err => setStatus("Failed to save: " + err.message, true));
+    });
+  </script>
+</body>
+</html>

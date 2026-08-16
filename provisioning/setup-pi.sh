@@ -16,6 +16,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_DIR="/opt/metarboard"
 SERVICE_USER="metarboard"
+DESKTOP_USER="pi"
 NODE_MAJOR="22"
 
 if [[ $EUID -ne 0 ]]; then
@@ -83,6 +84,18 @@ cp "${REPO_ROOT}/install/journald-size-cap.conf" /etc/systemd/journald.conf.d/me
 systemctl restart systemd-journald
 systemctl daemon-reload
 systemctl enable --now metarboard
+
+echo "==> Configuring kiosk auto-start for desktop user '${DESKTOP_USER}' (if present)"
+if id "${DESKTOP_USER}" >/dev/null 2>&1 && [[ -x /usr/bin/chromium ]]; then
+    DESKTOP_HOME="$(getent passwd "${DESKTOP_USER}" | cut -d: -f6)"
+    mkdir -p "${DESKTOP_HOME}/.config/labwc"
+    cp "${REPO_ROOT}/provisioning/labwc-autostart" "${DESKTOP_HOME}/.config/labwc/autostart"
+    chmod +x "${DESKTOP_HOME}/.config/labwc/autostart"
+    chown -R "${DESKTOP_USER}:${DESKTOP_USER}" "${DESKTOP_HOME}/.config/labwc"
+else
+    echo "    no '${DESKTOP_USER}' user or no chromium found, skipping kiosk auto-start"
+    echo "    (see provisioning/README.md if you need to set this up manually)"
+fi
 
 echo ""
 echo "==> Done. METARBoard should be starting now."

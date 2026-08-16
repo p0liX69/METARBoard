@@ -1,0 +1,19 @@
+#!/bin/sh
+# labwc autostart for the METARBoard kiosk appliance. Installed by
+# setup-pi.sh to ~/.config/labwc/autostart for the desktop-login user.
+# Deliberately omits the default wf-panel-pi taskbar and pcmanfm-pi
+# desktop/wallpaper manager - this is a dedicated-purpose display, not a
+# general desktop. kanshi is kept so display/output configuration still
+# works. lwrespawn auto-restarts chromium if it ever crashes.
+
+/usr/bin/kanshi &
+/usr/bin/lwrespawn /usr/bin/chromium \
+    --kiosk \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-session-crashed-bubble \
+    --disable-translate \
+    --overscroll-history-navigation=0 \
+    --check-for-update-interval=31536000 \
+    --start-fullscreen \
+    http://localhost:8500 &

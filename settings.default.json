@@ -5,6 +5,8 @@
     "wsport": 8550,
     "startupzoom": 9,
     "useOSMonlinemap": false,
+    "homeAirport": "KHGR",
+    "showRadarByDefault": true,
     "debug": false,
     "externalcharts": "",
     "uselocaltime": true,

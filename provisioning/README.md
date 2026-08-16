@@ -5,9 +5,16 @@ This turns a freshly-flashed Raspberry Pi into a running METARBoard appliance.
 ## 1. Flash the SD card
 
 Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to write
-**Raspberry Pi OS Lite (64-bit)** to the SD card. In the imager's advanced
-options (gear icon / Ctrl+Shift+X), enable SSH and set a hostname/username/
-password (or an SSH key) so you can connect headless.
+**Raspberry Pi OS (64-bit)** — the full desktop image, *not* the Lite one —
+to the SD card. The appliance boots straight into a fullscreen kiosk browser
+(see step 8), which needs the desktop image to run on. In the imager's
+advanced options (gear icon / Ctrl+Shift+X):
+
+- Enable SSH and set a hostname/username/password (or an SSH key) so you can
+  connect headless during setup.
+- Under "General", **enable autologin to desktop** for that same user. This
+  is required for the kiosk to come up with no keyboard/mouse attached —
+  without it the Pi will sit at a login prompt forever.
 
 ## 2. Boot it and connect
 
@@ -76,14 +83,42 @@ Then open `http://<pi-ip>:8500` in a browser.
 
 ## 7. Configure
 
-There's no setup wizard yet (see the project's productization plan for that
-follow-up work) — edit `/opt/metarboard/settings.json` directly for things
-like home airport (`localStorage` in the browser today), Stratux IP, ports,
-etc., then:
+From any device on the same network (phone, laptop — no keyboard/mouse on
+the appliance itself required), open:
 
-```bash
-sudo systemctl restart metarboard
 ```
+http://<pi-ip>:8500/admin
+```
+
+This lets you set the home airport, and toggle the default radar background
+and online map layer. Saving pushes a live-reload signal to the kiosk
+display over its existing WebSocket connection, so it updates on its own
+within a second or two — no need to touch the appliance.
+
+There's no auth on this page (by design, for LAN-only appliance use) — don't
+expose port 8500 to the open internet. For settings not covered by the admin
+page (Stratux IP, ports, etc.), edit `/opt/metarboard/settings.json` directly
+and `sudo systemctl restart metarboard`.
+
+## 8. Kiosk display (no keyboard/mouse)
+
+`setup-pi.sh` installs a `labwc` autostart entry (`~/.config/labwc/autostart`
+for the desktop-login user, default `pi`) that launches Chromium in kiosk
+mode pointed at the app on boot — fullscreen, no browser chrome, no desktop
+taskbar. This requires:
+
+- The full **Raspberry Pi OS (64-bit)** desktop image (not Lite) — see
+  step 1.
+- Autologin to desktop enabled for that user — also step 1. Without it, the
+  desktop session (and therefore the kiosk browser) never starts.
+
+After provisioning, `sudo reboot` and confirm the screen comes up directly
+in the fullscreen map view with no login prompt or desktop visible. If
+Chromium ever crashes, `lwrespawn` restarts it automatically.
+
+If the desktop user or `chromium` binary isn't found, `setup-pi.sh` skips
+this step and prints a warning — check that you flashed the desktop image
+and re-run the script.
 
 ## Re-provisioning / updating an existing Pi
 

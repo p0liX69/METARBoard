@@ -66,6 +66,8 @@ const BUILTIN_SETTINGS = {
     wsport: 8550,
     startupzoom: 9,
     useOSMonlinemap: false,
+    homeAirport: "KHGR",
+    showRadarByDefault: true,
     externalcharts: "",
     historyDb: "positionhistory.db",
     addscurrentxmlurl: "https://aviationweather.gov/data/cache/###.cache.xml",
@@ -276,20 +278,77 @@ try {
     app.get('/', (req, res) => {
         res.sendFile(`${__dirname}/public/index.html`);
     });
-    
+
+    app.get('/admin', (req, res) => {
+        res.sendFile(`${__dirname}/public/admin.html`);
+    });
+
     app.get("/getsettings", (req, res) => {
     let rawdata = fs.readFileSync(`${__dirname}/settings.json`);
     let json = JSON.parse(rawdata);
- 
-    // Add OpenSky credentials from environment
-    json.opensky = {
-        username: process.env.OPEN_SKY_USERNAME || "",
-        password: process.env.OPEN_SKY_PASSWORD || ""
-    };
- 
+
     res.writeHead(200);
     res.write(JSON.stringify(json));
     res.end();
+    });
+
+    // Whitelisted subset of settings.json that the admin page (and the
+    // on-screen home-airport control) may update remotely. Each validator
+    // returns the sanitized value, or undefined if the value is invalid.
+    const SETTINGS_VALIDATORS = {
+        homeAirport: (value) => {
+            const icao = String(value || "").trim().toUpperCase();
+            return /^[A-Z0-9]{3,4}$/.test(icao) ? icao : undefined;
+        },
+        showRadarByDefault: (value) => (typeof value === "boolean" ? value : undefined),
+        useOSMonlinemap: (value) => (typeof value === "boolean" ? value : undefined)
+    };
+
+    app.post("/savesettings", (req, res) => {
+        const updates = {};
+
+        for (const key of Object.keys(SETTINGS_VALIDATORS)) {
+            if (!(key in req.body)) continue;
+            const validated = SETTINGS_VALIDATORS[key](req.body[key]);
+            if (validated === undefined) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: `Invalid value for ${key}` }));
+                return;
+            }
+            updates[key] = validated;
+        }
+
+        const currentSettings = loadSettings();
+        const newSettings = { ...currentSettings, ...updates };
+        writeSettings(newSettings);
+        sendMessageToClients(JSON.stringify({ type: "settingsupdated", payload: "{}" }));
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true, settings: newSettings }));
+    });
+
+    // Proxies OpenSky traffic requests so credentials stay server-side and
+    // the browser isn't subject to OpenSky's CORS restrictions.
+    app.get("/opensky/states", async (req, res) => {
+        try {
+            const { lamin, lomin, lamax, lomax } = req.query;
+            const params = new URLSearchParams({ lamin, lomin, lamax, lomax });
+            const username = process.env.OPEN_SKY_USERNAME || "";
+            const password = process.env.OPEN_SKY_PASSWORD || "";
+            const headers = username && password
+                ? { Authorization: "Basic " + Buffer.from(`${username}:${password}`).toString("base64") }
+                : {};
+
+            const openSkyResponse = await fetch(`https://opensky-network.org/api/states/all?${params}`, { headers });
+            const data = await openSkyResponse.json();
+            res.writeHead(openSkyResponse.status);
+            res.end(JSON.stringify(data));
+        }
+        catch (err) {
+            console.log(err);
+            res.writeHead(502);
+            res.end(JSON.stringify({ error: "Failed to fetch OpenSky traffic" }));
+        }
     });
 
     app.get("/databaselist", (req, res) => {
