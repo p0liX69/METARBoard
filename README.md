@@ -17,6 +17,15 @@ This project is based on [ChartServer by n129bz](https://github.com/n129bz/chart
 
 ## Setup
 
+### Raspberry Pi appliance install (recommended for a wall-display Pi)
+
+See [`provisioning/README.md`](provisioning/README.md) for a script that
+provisions a freshly-flashed Raspberry Pi end-to-end: installs Node.js,
+creates a dedicated system user, and installs METARBoard as a self-healing
+systemd service that starts on boot.
+
+### Manual / development setup
+
 ### 1. Install dependencies
 
 Ensure you have Node.js and npm installed. Then run:
@@ -35,7 +44,7 @@ Place `.mbtiles` files into the `charts/` folder. You can generate these using t
 node server.js
 ```
 
-The server will start and listen on the port specified in `settings.json` (default: 8500). The WebSocket server runs on its own port (default: 8501).
+The server will start and listen on the port specified in `settings.json` (default: 8500). The WebSocket server runs on its own port (default: 8550).
 
 ### 4. Access the frontend
 
@@ -52,7 +61,7 @@ http://<your-device-ip>:8500
 - `public/`: Static web frontend
 - `settings.json`: Configuration (ports, map settings, etc.)
 - `airports.json`: ICAO airport data with lat/lon
-- `position_history.db`: Tracks user position over time
+- `positionhistory.db`: Tracks user position over time
 
 ## Configuration
 

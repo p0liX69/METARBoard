@@ -284,32 +284,6 @@ const regioncontrol = document.getElementById('isoregion');
 const regionselect = document.getElementById("regionselect");
 let regionmap = new Map();
 
-/** 
- * Request settings JSON object from server
- */
- $.get({
-    async: false,
-    type: "GET",
-    url: URL_GET_SETTINGS,
-    success: (data) => {
-        try {
-            settings = JSON.parse(data);
-            MessageTypes = settings.messagetypes;
-            DistanceUnits = settings.distanceunits;
-            distanceunit = settings.distanceunit;
-            currentZoom = settings.startupzoom;
-            const OPEN_SKY_USERNAME = settings.opensky?.username || "";
-            const OPEN_SKY_PASSWORD = settings.opensky?.password || "";
-        }
-        catch(err) {
-            console.log(err);
-        }
-    },
-    error: (xhr, ajaxOptions, thrownError) => {
-        console.error(xhr.status, thrownError);
-    }
-});
-
 // Floating clock overlay
 const clockContainer = document.createElement("div");
 clockContainer.style.position = "absolute";
@@ -346,136 +320,152 @@ setInterval(updateClockOverlay, 1000);
 updateClockOverlay();
 
 /**
- * Get the json file containing the metadata from all 
- * available mbtiles databases on the server
+ * Load settings, metadatasets, database list, and last known position
+ * from the server (in that order, since later requests depend on
+ * settings having been parsed), then open the websocket connection(s).
  */
-$.get({
-    async: false,
-    type: "GET",
-    url: URL_GET_METADATASETS,
-    success: (data) => {
-        try {
-            metadatasets = JSON.parse(data);
-        }
-        catch(err){
-            console.log(err);
-        }
-    }, 
-    error: (xhr, ajaxOptions, thrownError) => {
-        console.error(xhr.status, thrownError)
+async function loadInitialData() {
+    try {
+        const response = await fetch(URL_GET_SETTINGS);
+        settings = JSON.parse(await response.text());
+        MessageTypes = settings.messagetypes;
+        DistanceUnits = settings.distanceunits;
+        distanceunit = settings.distanceunit;
+        currentZoom = settings.startupzoom;
+        OPEN_SKY_USERNAME = settings.opensky?.username || "";
+        OPEN_SKY_PASSWORD = settings.opensky?.password || "";
     }
-});
+    catch (err) {
+        console.log(err);
+    }
+
+    try {
+        const response = await fetch(URL_GET_METADATASETS);
+        metadatasets = JSON.parse(await response.text());
+    }
+    catch (err) {
+        console.log(err);
+    }
+
+    try {
+        const response = await fetch(URL_GET_DBLIST);
+        dblist = JSON.parse(await response.text());
+    }
+    catch (err) {
+        console.log(err);
+    }
+
+    try {
+        const response = await fetch(URL_GET_HISTORY);
+        let histobj = JSON.parse(await response.text());
+        last_longitude = histobj.longitude;
+        last_latitude = histobj.latitude;
+        last_heading = histobj.heading;
+    }
+    catch (err) {
+        console.log(err);
+    }
+
+    connectWebSocket();
+    if (settings.usestratux) {
+        setupStratuxWebsockets();
+    }
+}
+
+loadInitialData();
 
 /**
- * Get the list of available mbtiles databases from the server
+ * Websocket connection and message handling, reconnects with
+ * exponential backoff (capped) if the connection drops
  */
-$.get({
-    async: false,
-    type: "GET",
-    url: URL_GET_DBLIST,
-    success: (data) => {
-        try {
-            dblist = JSON.parse(data);
-        }
-        catch(err) {
-            console.log(err);
-        }
-    },
-    error: (xhr, ajaxOptions, thrownError) => {
-        console.error(xhr.status, thrownError);
-    }
-});
+const WS_RECONNECT_BASE_DELAY_MS = 1000;
+const WS_RECONNECT_MAX_DELAY_MS = 30000;
+let wsReconnectAttempts = 0;
 
-/**
- * Request Initial ownship position latitude & longitude.
- * Data is stored in the sqlite positionhistory.db file.
- * This will also center the viewport on that position.
- */
-$.get({
-    async: false,
-    type: "GET",
-    url: URL_GET_HISTORY,
-    success: (data) => {
-        try {
-            let histobj = JSON.parse(data);
-            last_longitude = histobj.longitude;
-            last_latitude = histobj.latitude;
-            last_heading = histobj.heading;
-        }
-        catch (err) {
-            console.log(err);
-        }
-    },
-    error: (xhr, ajaxOptions, thrownError) => {
-        console.error(xhr.status, thrownError);
-    }
-});
-
-/**
- * Websocket connection and message handling
- */
- $(() => { 
+function connectWebSocket() {
     try {
         let wsurl = `${URL_WINSOCK}${settings.wsport}`;
         console.log(`OPENING: ${wsurl}`);
         wsServer = new WebSocket(wsurl);
         wsServer.onmessage = (evt) => {
-            let message = JSON.parse(evt.data);
-            let payload = JSON.parse(message.payload);
+            try {
+                let message = JSON.parse(evt.data);
+                let payload = JSON.parse(message.payload);
 
-            switch (message.type) {
-            // case MessageTypes.airports.type:
-            //     processAirports(payload);
-            //     break;
-                case MessageTypes.metars.type:
-                    processMetars(payload);
-                    const savedHome = localStorage.getItem("homeAirport");
-                    if (savedHome && airportNameKeymap.has(savedHome)) {
-                        centerOnHomeAirport();
-                    }
-                    break;
-                case MessageTypes.tafs.type:
-                    processTafs(payload);
-                    break;
-                case MessageTypes.pireps.type:
-                    processPireps(payload);
-                    break;
+                switch (message.type) {
+                    case MessageTypes.metars.type:
+                        processMetars(payload);
+                        const savedHome = localStorage.getItem("homeAirport");
+                        if (savedHome && airportNameKeymap.has(savedHome)) {
+                            centerOnHomeAirport();
+                        }
+                        break;
+                    case MessageTypes.tafs.type:
+                        processTafs(payload);
+                        break;
+                    case MessageTypes.pireps.type:
+                        processPireps(payload);
+                        break;
+                }
+            }
+            catch (err) {
+                console.log("Failed to process websocket message:", err);
             }
         }
 
         wsServer.onerror = function(evt){
             console.log("Websocket ERROR: " + evt.data);
         }
-        
+
         wsServer.onopen = function(evt) {
             console.log("Websocket CONNECTED.");
             wsServerOpen = true;
+            wsReconnectAttempts = 0;
             keepAlive();
         }
-        
+
         wsServer.onclose = function(evt) {
             cancelKeepAlive();
             wsServerOpen = false;
             console.log("Websocket CLOSED.");
+            scheduleWebSocketReconnect();
         }
     }
     catch (error) {
         console.log(error);
+        scheduleWebSocketReconnect();
     }
-    
-    if (settings.usestratux) {
-        setupStratuxWebsockets();
-    }
-});
+}
+
+function scheduleWebSocketReconnect() {
+    const delay = Math.min(WS_RECONNECT_BASE_DELAY_MS * (2 ** wsReconnectAttempts), WS_RECONNECT_MAX_DELAY_MS);
+    wsReconnectAttempts++;
+    console.log(`Reconnecting websocket in ${delay}ms...`);
+    setTimeout(connectWebSocket, delay);
+}
 
 function setupStratuxWebsockets() {
+    connectStratuxTraffic();
+    connectStratuxSituation();
+}
+
+function connectStratuxTraffic() {
     let wsturl = settings.stratuxtrafficws.replace("[stratuxip]", settings.stratuxip);
     wsTraffic = new WebSocket(wsturl);
     wsTraffic.onmessage = function(evt){
         let tdata = JSON.parse(evt.data);
         addTrafficItem(tdata);
     }
+    wsTraffic.onerror = function(evt) {
+        console.log("Stratux traffic websocket ERROR.");
+    }
+    wsTraffic.onclose = function(evt) {
+        console.log("Stratux traffic websocket CLOSED, retrying...");
+        setTimeout(connectStratuxTraffic, 5000);
+    }
+}
 
+function connectStratuxSituation() {
     let wssurl = settings.stratuxsituationws.replace("[stratuxip]", settings.stratuxip);
     wsSituation = new WebSocket(wssurl);
     wsSituation.onmessage = function(evt){
@@ -483,6 +473,13 @@ function setupStratuxWebsockets() {
             let sdata = JSON.parse(evt.data);
             setOwnshipOrientation(sdata);
         }
+    }
+    wsSituation.onerror = function(evt) {
+        console.log("Stratux situation websocket ERROR.");
+    }
+    wsSituation.onclose = function(evt) {
+        console.log("Stratux situation websocket CLOSED, retrying...");
+        setTimeout(connectStratuxSituation, 5000);
     }
 }
 
@@ -904,8 +901,25 @@ map.on('click', (evt) => {
 });
 
 /**
+ * Escape a value for safe interpolation into HTML built via template strings
+ * @param {*} value
+ * @returns {string} escaped string, safe to insert via innerHTML
+ */
+function escapeHtml(value) {
+    if (value === undefined || value === null) {
+        return "";
+    }
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+/**
  * Create the html for a METAR popup element
- * @param {feature} ol.Feature: the metar feature the user clicked on 
+ * @param {feature} ol.Feature: the metar feature the user clicked on
  */
  function displayMetarPopup(feature) {
     let metar = feature.get("metar");
@@ -972,7 +986,7 @@ map.on('click', (evt) => {
       <tr><td>Sky cover:</td><td>${skyconditions || ""}</td></tr>
     </table>
     <div class="wind-graphic">${svg}</div>
-    <textarea class="rawdata">${rawmetar}</textarea>
+    <textarea class="rawdata">${escapeHtml(rawmetar)}</textarea>
   `;
         const existingBox = document.getElementById("homeMetarBox");
         if (existingBox) {
@@ -1025,7 +1039,7 @@ function displayTafPopup(feature) {
         }
     }
     
-    html += `</p></div><textarea class="rawdata">${rawtaf}</textarea><br />`;
+    html += `</p></div><textarea class="rawdata">${escapeHtml(rawtaf)}</textarea><br />`;
     html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
     let innerhtml = outerhtml.replace("###", html);
     popupcontent.innerHTML = innerhtml;
@@ -1187,7 +1201,7 @@ function parseForecastField(rawfieldname, fieldvalue) {
                 break;
         }
     }
-    html += `</p></div><textarea class="rawdata">${rawaircraftreport}</textarea>`;
+    html += `</p></div><textarea class="rawdata">${escapeHtml(rawaircraftreport)}</textarea>`;
     html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
     let innerhtml = outerhtml.replace("###", html);
     popupcontent.innerHTML = innerhtml;
@@ -1319,6 +1333,7 @@ function getConditionImage(conditiontype, conditionvalue) {
                 break;
             case "TRC-LGT":
                 image = "IceTraceLight.png"
+                break;
             case "LGT":
                 image = "IceLight.png";
                 break;
@@ -1345,6 +1360,7 @@ function getConditionImage(conditiontype, conditionvalue) {
             case "SMTH-LGT":
             case "LGT":
                 image = "TurbSmoothLight.png";
+                break;
             case "LGT-CHOP":
                 image = "TurbLight.png";    
                 break;

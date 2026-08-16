@@ -4,18 +4,13 @@
   "description": "Aviation and Weather Maps",
   "main": "server.js",
   "author": "Todd Shipway",
-  "license": "BSD 3-Clause",
+  "license": "MIT",
   "dependencies": {
-    "child_process": "^1.0.2",
+    "better-sqlite3": "^11.3.0",
     "cors": "^2.8.5",
     "express": "^4.17.2",
     "fast-xml-parser": "^4.0.3",
-    "fs": "^0.0.1-security",
-    "math": "0.0.3",
     "serve-favicon": "^2.5.0",
-    "sqlite3": "^5.1.6",
-    "tcp-ping-sync": "^2.0.0",
-    "url": "^0.11.0",
     "ws": "^8.5.0",
     "xmlhttprequest": "^1.8.0"
   }

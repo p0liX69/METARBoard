@@ -2,15 +2,11 @@ const express = require('express');
 const favicon = require('serve-favicon');
 const cors = require('cors');
 const url = require('url');
-const sqlite3 = require("sqlite3");
-const Math = require("math");
 const fs = require("fs");
 const WebSocket = require('ws');
 const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const { XMLParser } = require('fast-xml-parser');
 const { unzip, unzipSync } = require('zlib');
-const { ping, probe } = require('tcp-ping-sync');
-const { execSync, exec } = require('child_process');
 
 /**
  * These objects are used by the XMLParser to convert XML to JSON.
@@ -35,6 +31,18 @@ const xmlParseOptions = {
  */
 const xmlparser = new XMLParser(xmlParseOptions);
 
+/**
+ * The sqlite database engine. Guarded because the native binary can fail to
+ * load (wrong arch, missing prebuild) - if that happens we still want the
+ * server to start and serve a diagnostic response instead of crash-looping.
+ */
+let Database = null;
+try {
+    Database = require('better-sqlite3');
+}
+catch (err) {
+    console.log(`FATAL: failed to load better-sqlite3 native module: ${err.message}`);
+}
 
 /**
  * Global variables
@@ -47,10 +55,59 @@ let connections = new Map();
 let DB_PATH = `${__dirname}/charts`;
 
 /**
- * Get the global settings JSON object
+ * Load settings.json, falling back to settings.default.json, and finally to
+ * a minimal built-in default if both are missing or fail to parse - a fresh
+ * or corrupted settings file must never prevent the server from starting.
  */
-let rawdata = fs.readFileSync(`${__dirname}/settings.json`);
-let settings = JSON.parse(rawdata);
+const BUILTIN_SETTINGS = {
+    wxupdateintervalmsec: 480000,
+    keepaliveintervalmsec: 30000,
+    httpport: 8500,
+    wsport: 8550,
+    startupzoom: 9,
+    useOSMonlinemap: false,
+    externalcharts: "",
+    historyDb: "positionhistory.db",
+    addscurrentxmlurl: "https://aviationweather.gov/data/cache/###.cache.xml",
+    messagetypes: {
+        metars: { type: "metars", token: "###" },
+        tafs: { type: "tafs", token: "###" },
+        pireps: { type: "aircraftreports", token: "###" },
+        airports: { type: "airports", token: "" },
+        keepalive: { type: "keepalive", token: "((💜))" }
+    }
+};
+
+function loadSettings() {
+    try {
+        return JSON.parse(fs.readFileSync(`${__dirname}/settings.json`));
+    }
+    catch (err) {
+        console.log(`WARNING: failed to load settings.json: ${err.message}`);
+    }
+    try {
+        console.log("Falling back to settings.default.json");
+        return JSON.parse(fs.readFileSync(`${__dirname}/settings.default.json`));
+    }
+    catch (err) {
+        console.log(`WARNING: failed to load settings.default.json: ${err.message}`);
+    }
+    console.log("Using built-in fallback settings");
+    return JSON.parse(JSON.stringify(BUILTIN_SETTINGS));
+}
+
+/**
+ * Atomically write settings.json (write to a temp file, then rename over
+ * the real file) so a power loss mid-write can't leave it corrupted.
+ */
+function writeSettings(newSettings) {
+    let target = `${__dirname}/settings.json`;
+    let tmp = `${target}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(newSettings, null, "    "));
+    fs.renameSync(tmp, target);
+}
+
+let settings = loadSettings();
 
 /******************************************************
    if running in a docker container, check to see if an
@@ -58,19 +115,28 @@ let settings = JSON.parse(rawdata);
    use it
 *******************************************************/
 function isRunningInDocker() {
-    let dkresults = `${__dirname}/isdocker.txt`;
-    let dcmd = `cat /proc/1/cgroup > ${dkresults}`;
-
-    execSync(dcmd);
-
-    let txtresult = fs.readFileSync(dkresults, { encoding: 'utf8', flag: 'r' });
-    let isdocker = (txtresult.toString().search("/docker/") > -1)
-    fs.rmSync(dkresults);
-    
+    let isdocker = fs.existsSync('/.dockerenv');
     if (isdocker) {
         console.log("Running in docker!");
     }
     return isdocker;
+}
+
+/**
+ * Non-blocking check for internet access, used to decide whether
+ * the frontend can use the online OSM base map layer
+ */
+async function hasInternetAccess() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch('https://www.google.com', { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
+        return response.ok;
+    }
+    catch (err) {
+        return false;
+    }
 }
 
 if (isRunningInDocker()) {
@@ -97,9 +163,11 @@ const metadatasets = new Map();
 (() => {
     // check for internet access to see if OSM online maps can be used
     if (!settings.useOSMonlinemap) {
-        settings.useOSMonlinemap = probe('google.com');
-        fs.writeFileSync(`${__dirname}/settings.json`, JSON.stringify(settings,null,"    "));
-    } 
+        hasInternetAccess().then((isOnline) => {
+            settings.useOSMonlinemap = isOnline;
+            writeSettings(settings);
+        });
+    }
 
     MessageTypes   = settings.messagetypes;
     try {
@@ -153,26 +221,27 @@ loadDatabases();
 loadMetadatasets();
 
 function loadDatabases() {
-    try {
-        databaselist.forEach((dbfile, key) => {
-            var db = new sqlite3.Database(dbfile, sqlite3.OPEN_READONLY, (err) => {
-                if (err) {
-                    console.log(`Failed to load: ${key}: ${err}`);
-                    throw err;
-                }
-            });
-            databases.set(key, db);
-        });
-    }
-    catch(err) {
-        console.log(err.message);
+    if (!Database) {
+        console.log("Database engine unavailable - chart tiles and position history are disabled.");
+        return;
     }
 
-    histdb = new sqlite3.Database(`${__dirname}/${settings.historyDb}`, sqlite3.OPEN_READWRITE, (err) => {
-        if (err){
-            console.log(`Failed to load: ${settings.historyDb}: ${err}`);
+    databaselist.forEach((dbfile, key) => {
+        try {
+            let db = new Database(dbfile, { readonly: true, fileMustExist: true });
+            databases.set(key, db);
+        }
+        catch (err) {
+            console.log(`Failed to load: ${key}: ${err.message}`);
         }
     });
+
+    try {
+        histdb = new Database(`${__dirname}/${settings.historyDb}`);
+    }
+    catch (err) {
+        console.log(`Failed to load: ${settings.historyDb}: ${err.message}`);
+    }
 }
 
 /**
@@ -274,26 +343,34 @@ catch (err) {
  * @param {response} http response 
  */
 function getPositionHistory(response) {
-    let sql = "SELECT * FROM position_history WHERE id IN ( SELECT max( id ) FROM position_history )";
-    histdb.get(sql, (err, row) => {
-        if (!err) {
-            if (row != undefined) {
-                let obj = {};
-                obj["longitude"] = row.longitude;
-                obj["latitude"] = row.latitude;
-                obj["heading"] = row.heading;
-                response.writeHead(200);
-                response.write(JSON.stringify(obj));
-                response.end();
-            }
-        }
-        else
-        {
-            console.log(err);
-            response.writeHead(500);
+    if (!histdb) {
+        response.writeHead(503);
+        response.end();
+        return;
+    }
+    try {
+        let sql = "SELECT * FROM position_history WHERE id IN ( SELECT max( id ) FROM position_history )";
+        let row = histdb.prepare(sql).get();
+        if (row !== undefined) {
+            let obj = {
+                longitude: row.longitude,
+                latitude: row.latitude,
+                heading: row.heading
+            };
+            response.writeHead(200);
+            response.write(JSON.stringify(obj));
             response.end();
         }
-    });
+        else {
+            response.writeHead(200);
+            response.end();
+        }
+    }
+    catch (err) {
+        console.log(err);
+        response.writeHead(500);
+        response.end();
+    }
 }
 
 /**
@@ -301,19 +378,22 @@ function getPositionHistory(response) {
  * @param {json object} data, contains date, longitude, latitude, heading, and altitude 
  */
 function savePositionHistory(data) {
+    if (!histdb) {
+        console.log("Cannot save position history: database engine unavailable.");
+        return;
+    }
     let datetime = new Date().toISOString();
-    let position = `'${datetime}', ${data.longitude}, ${data.latitude}, ${data.heading}, ${data.altitude}`;
     let sql = `INSERT INTO position_history (datetime, longitude, latitude, heading, gpsaltitude) ` +
-              `VALUES (${position})`;
-        
-    histdb.run(sql, function(err) {
-        if (err) {
-            console.log(err);
-        }
-        else {
-            console.log(`position: ${position}`);
-        }
-    });
+              `VALUES (?, ?, ?, ?, ?)`;
+    let params = [datetime, data.longitude, data.latitude, data.heading, data.altitude];
+
+    try {
+        histdb.prepare(sql).run(...params);
+        console.log(`position: ${params.join(', ')}`);
+    }
+    catch (err) {
+        console.log(err);
+    }
 }
 
 /**
@@ -364,28 +444,29 @@ function handleTile(request, response, db) {
  * @param {database} sqlite database
  */
 function loadTile(z, x, y, response, db) {
-    let sql = `SELECT tile_data FROM tiles WHERE zoom_level=${z} AND tile_column=${x} AND tile_row=${y}`;
-    db.get(sql, (err, row) => {
-        if (!err) {
-            if (row == undefined) {
-                response.writeHead(200);
-                response.end();
-            }
-            else {
-                if (row.tile_data != undefined) {
-                    let png = row.tile_data;
-                    response.writeHead(200);
-                    response.write(png);
-                    response.end();
-                }
-            }
+    if (!db) {
+        response.writeHead(503);
+        response.end();
+        return;
+    }
+    try {
+        let sql = `SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?`;
+        let row = db.prepare(sql).get(z, x, y);
+        if (row !== undefined && row.tile_data != undefined) {
+            response.writeHead(200);
+            response.write(row.tile_data);
+            response.end();
         }
         else {
-            console.log(err);
-            response.writeHead(500, err.message);
+            response.writeHead(200);
             response.end();
-        } 
-    });
+        }
+    }
+    catch (err) {
+        console.log(err);
+        response.writeHead(500, err.message);
+        response.end();
+    }
 }
 
 /**
@@ -397,43 +478,31 @@ function loadMetadatasets() {
               `WHERE NOT EXISTS (SELECT * FROM metadata WHERE name='maxzoom')`;
     
     databases.forEach((db, key) => {
-        let item = {};
-        item["bounds"] = "";
-        item["attribution"] = "";
-        let found = false;
-        
-        db.all(sql, [], (err, rows) => {
-            if (!err) {
-                rows.forEach((row) => {
-                    if (row.value != null) {
-                        item[row.name] = row.value;
-                    }
-                    if (row.name === "maxzoom" && row.value != null) { // && !found) {
-                        let maxZoomInt = parseInt(row.value); 
-                        sql = `SELECT min(tile_column) as xmin, min(tile_row) as ymin, ` + 
-                                    `max(tile_column) as xmax, max(tile_row) as ymax ` +
+        let item = { bounds: "", attribution: "" };
+        try {
+            let rows = db.prepare(sql).all();
+            rows.forEach((row) => {
+                if (row.value != null) {
+                    item[row.name] = row.value;
+                }
+                if (row.name === "maxzoom" && row.value != null) {
+                    let maxZoomInt = parseInt(row.value);
+                    let boundsSql = `SELECT min(tile_column) as xmin, min(tile_row) as ymin, ` +
+                                `max(tile_column) as xmax, max(tile_row) as ymax ` +
                             `FROM tiles WHERE zoom_level=?`;
-                        db.get(sql, [maxZoomInt], (err, row) => {
-                            let xmin = row.xmin;
-                            let ymin = row.ymin; 
-                            let xmax = row.xmax; 
-                            let ymax = row.ymax;  
-                            
-                            llmin = tileToDegree(maxZoomInt, xmin, ymin);
-                            llmax = tileToDegree(maxZoomInt, xmax+1, ymax+1);
-                            
-                            retarray = `${llmin[0]}, ${llmin[1]}, ${llmax[0]}, ${llmax[1]}`;
-                            item["bounds"] = retarray;
-                            found = true;
-                        });
+                    let boundsRow = db.prepare(boundsSql).get(maxZoomInt);
+                    if (boundsRow) {
+                        let llmin = tileToDegree(maxZoomInt, boundsRow.xmin, boundsRow.ymin);
+                        let llmax = tileToDegree(maxZoomInt, boundsRow.xmax + 1, boundsRow.ymax + 1);
+                        item["bounds"] = `${llmin[0]}, ${llmin[1]}, ${llmax[0]}, ${llmax[1]}`;
                     }
-                });
-                metadatasets.set(key, item);
-            }
-            else {
-                console.log(err);
-            }
-        });
+                }
+            });
+            metadatasets.set(key, item);
+        }
+        catch (err) {
+            console.log(err.message);
+        }
     });
 }
 
