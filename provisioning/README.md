@@ -71,6 +71,34 @@ ssh pi@<pi-ip> 'sudo chown -R metarboard:metarboard /opt/metarboard/charts && su
 
 Re-running `setup-pi.sh` later will not touch or delete this directory.
 
+## 5b. Enable traffic aircraft info/icons (optional)
+
+Live traffic (ADS-B via OpenSky) works without this step, but shows a
+generic icon and no registration/model on click. To enable real aircraft
+info and type-differentiated icons (helicopter/jet/GA/etc.), build a local
+lookup database **once, on your own machine** (not the Pi — it needs
+`devDependencies` installed, and there's no reason to make the Pi do a
+616k-row CSV parse):
+
+```bash
+# from a checkout on your dev machine, with npm ci (not --omit=dev) already run
+curl -o /tmp/aircraft-database-complete.csv \
+  https://s3.opensky-network.org/data-samples/metadata/aircraft-database-complete-2025-08.csv
+node provisioning/import-aircraft-db.js /tmp/aircraft-database-complete.csv
+```
+
+This produces `aircraft.db` (~40MB) in the repo root — not checked into
+git (same reasoning as `charts/*.mbtiles`). Copy it to the Pi and restart:
+
+```bash
+rsync -avz aircraft.db pi@<pi-ip>:/opt/metarboard/aircraft.db
+ssh pi@<pi-ip> 'sudo chown metarboard:metarboard /opt/metarboard/aircraft.db && sudo systemctl restart metarboard'
+```
+
+The server logs "Aircraft database not loaded" at startup and the
+`/aircraft/batch` endpoint just returns `{}` if you skip this step — it's
+optional, not required for the app to run.
+
 ## 6. Verify
 
 ```bash

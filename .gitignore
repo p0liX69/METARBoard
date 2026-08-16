@@ -2,6 +2,8 @@
 **/out
 **/xmldata/*.xml
 **/*.db
+**/*.db-shm
+**/*.db-wal
 **/*.mbtiles
 .DS_Store
 .env

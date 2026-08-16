@@ -209,6 +209,8 @@ let icingCodeKeymap = new Map();
 let turbulenceCodeKeymap = new Map();
 let skyConditionKeymap = new Map();
 let trafficMap = new Map();
+// icao24 (lowercase) -> {registration, manufacturer, model, operator, category}
+let aircraftInfoCache = new Map();
 /*******keymap loading ******/
 loadTafFieldKeymap();
 loadMetarFieldKeymap();
@@ -513,15 +515,10 @@ function connectStratuxSituation() {
  * @param {json object} jsondata 
  */
 function addTrafficItem(jsondata) {
-    try {
-        trafficMap.delete(jsondata.Icao_addr);
-    }
-    catch(err){
-        // do nothing
-    }
+    trafficMap.delete(jsondata.Icao_addr);
     if (jsondata.AgeLastAlt < 50 && jsondata.Speed > 0) {
-        trafficMap.set(jsondata.Icao_addr, jsondata);
-        processTraffic(jsondata);
+        trafficMap.set(jsondata.Icao_addr, { ...jsondata, lastUpdated: Date.now() });
+        processTraffic();
     }
 }
 
@@ -828,6 +825,10 @@ const map = new ol.Map({
         maxZoom: 22
     }),
     controls: ol.control.defaults().extend([scaleLine]),
+    // This is a fixed ambient display with no input device in the field -
+    // disable all pan/zoom/rotate interactions rather than picking them off
+    // one at a time.
+    interactions: [],
     overlays: [popupoverlay]
 });
 
@@ -883,12 +884,10 @@ map.on('click', (evt) => {
         if (feature) {
             let datatype = feature.get("datatype");
     
-            if (datatype === "traffic") {
-                return; // prevent any traffic info from showing
-            }
-    
             if (datatype === "metar") {
                 return;
+            } else if (datatype === "traffic") {
+                displayTrafficPopup(feature);
             } else if (datatype === "taf") {
                 displayTafPopup(feature);
             } else if (datatype === "pirep") {
@@ -1409,29 +1408,64 @@ function displayAirportPopup(feature) {
 
 /**
  * Build the html for a traffic feature
- * @param {*} feature: the traffic the user clicked on 
+ * @param {*} feature: the traffic the user clicked on
  */
 function displayTrafficPopup(feature) {
-    return; // prevent label/popup generation
+    const item = feature.get("traffic") || {};
+    const info = aircraftInfoCache.get((item.Icao_addr || "").toLowerCase());
+
+    let html = `<div><p>`;
+    if (info) {
+        html += `<label class="pirepitem"><b>${escapeHtml(info.registration || item.Icao_addr)}</b></label><br />`;
+        if (info.manufacturer || info.model) {
+            html += `<label class="pirepitem">${escapeHtml([info.manufacturer, info.model].filter(Boolean).join(" "))}</label><br />`;
+        }
+        if (info.operator) {
+            html += `<label class="pirepitem">${escapeHtml(info.operator)}</label><br />`;
+        }
+    }
+    else {
+        html += `<label class="pirepitem"><b>${escapeHtml(item.Icao_addr || "Unknown aircraft")}</b></label><br />`;
+        html += `<label class="pirepitem">No aircraft database match</label><br />`;
+    }
+    if (Number.isFinite(item.Speed)) {
+        html += `<label class="pirepitem">Speed: <b>${Math.round(item.Speed)} kt</b></label><br />`;
+    }
+    if (Number.isFinite(item.Track)) {
+        html += `<label class="pirepitem">Heading: <b>${Math.round(item.Track)}&deg;</b></label><br />`;
+    }
+    html += `</p><p><button class="ol-popup-closer" onclick="closePopup()">close</button></p></div>`;
+
+    popupcontent.innerHTML = html;
 }
 
-function processTraffic(jsondata) {
-    try {
-        trafficFeatures.clear();
+const TRAFFIC_TTL_MS = 2 * 60 * 1000;
 
-        for (let [key, item] of trafficMap) {
-            if (!item || !item.Lat || !item.Lng) continue;
+function processTraffic() {
+    const now = Date.now();
+    for (const [key, item] of trafficMap) {
+        if (!item.lastUpdated || now - item.lastUpdated > TRAFFIC_TTL_MS) {
+            trafficMap.delete(key);
+        }
+    }
+
+    trafficFeatures.clear();
+
+    for (const [key, item] of trafficMap) {
+        try {
+            if (!item || !Number.isFinite(item.Lat) || !Number.isFinite(item.Lng)) continue;
 
             const trafficFeature = new ol.Feature({
                 geometry: new ol.geom.Point(ol.proj.fromLonLat([item.Lng, item.Lat])),
-                datatype: "traffic"
+                datatype: "traffic",
+                traffic: item
             });
 
             const tradians = (item.Track || 0) * Math.PI / 180;
 
             trafficFeature.setStyle(new ol.style.Style({
                 image: new ol.style.Icon({
-                    src: `${URL_SERVER}/img/airplane_white.svg`,
+                    src: getTrafficIconSrc(item.Icao_addr),
                     crossOrigin: 'anonymous',
                     scale: 0.07,
                     rotation: tradians
@@ -1440,12 +1474,16 @@ function processTraffic(jsondata) {
 
             trafficFeatures.push(trafficFeature);
         }
-
-        trafficVectorSource.clear();
-        trafficVectorSource.addFeatures(trafficFeatures.getArray());
-    } catch (err) {
-        console.error("Traffic render error:", err);
+        catch (err) {
+            // Isolate one malformed entry from the rest of the rebuild -
+            // this previously let a single bad item silently zero out
+            // every other valid traffic feature on every subsequent update.
+            console.error(`Traffic render error for ${key}:`, err);
+        }
     }
+
+    trafficVectorSource.clear();
+    trafficVectorSource.addFeatures(trafficFeatures.getArray());
 }
 
 /**
@@ -1975,6 +2013,7 @@ setInterval(() => {
         .then(res => res.json())
         .then(data => {
             if (!data || !data.states) return;
+            const unknownIcao24s = new Set();
             data.states.forEach(state => {
                 const [
                     icao24, callsign, originCountry, timePosition, lastContact,
@@ -1993,11 +2032,57 @@ setInterval(() => {
                         AgeLastAlt: 0
                     };
                     addTrafficItem(trafficData);
+                    if (icao24 && !aircraftInfoCache.has(icao24.toLowerCase())) {
+                        unknownIcao24s.add(icao24.toLowerCase());
+                    }
                 }
             });
+
+            if (unknownIcao24s.size > 0) {
+                fetchAircraftInfo([...unknownIcao24s]);
+            }
         })
         .catch(err => console.error("OpenSky fetch error:", err));
 }, 15000);
+
+/**
+ * Batch-look-up aircraft registration/manufacturer/model/operator/category
+ * for whichever icao24s haven't been looked up yet, then re-render traffic
+ * so icons/popups pick up the newly-cached info.
+ */
+function fetchAircraftInfo(icao24List) {
+    fetch(`${URL_SERVER}/aircraft/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ icao24s: icao24List })
+    })
+        .then(res => res.json())
+        .then(data => {
+            const found = data || {};
+            icao24List.forEach(icao24 => {
+                aircraftInfoCache.set(icao24, found[icao24] || null);
+            });
+            processTraffic();
+        })
+        .catch(err => console.error("Aircraft info fetch error:", err));
+}
+
+/**
+ * Pick a traffic icon by ICAO aircraft class (e.g. "H1P" = helicopter,
+ * "L2J" = multi-engine land jet) when a database match exists, falling
+ * back to a generic icon otherwise.
+ */
+function getTrafficIconSrc(icao24) {
+    const category = aircraftInfoCache.get((icao24 || "").toLowerCase())?.category;
+    if (!category) return `${URL_SERVER}/img/traffic-unknown.svg`;
+
+    const upper = category.toUpperCase();
+    if (upper.startsWith("H")) return `${URL_SERVER}/img/traffic-helicopter.svg`;
+    if (upper.endsWith("J")) return `${URL_SERVER}/img/traffic-jet.svg`;
+    if (upper.startsWith("L1")) return `${URL_SERVER}/img/traffic-ga-single.svg`;
+    if (/^L[2-4]/.test(upper)) return `${URL_SERVER}/img/traffic-multi-prop.svg`;
+    return `${URL_SERVER}/img/traffic-unknown.svg`;
+}
 
 /**
  * Start the weather radar animation

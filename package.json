@@ -13,5 +13,8 @@
     "serve-favicon": "^2.5.0",
     "ws": "^8.5.0",
     "xmlhttprequest": "^1.8.0"
+  },
+  "devDependencies": {
+    "csv-parse": "^7.0.2"
   }
 }

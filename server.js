@@ -155,6 +155,7 @@ else {
 }
 
 let histdb;
+let aircraftDb;
 const databaselist = new Map();
 const databases    = new Map();
 const metadatasets = new Map();
@@ -243,6 +244,16 @@ function loadDatabases() {
     }
     catch (err) {
         console.log(`Failed to load: ${settings.historyDb}: ${err.message}`);
+    }
+
+    // Optional: only present once provisioning/import-aircraft-db.js has
+    // been run manually. Traffic metadata lookups just come back empty
+    // without it - not a startup requirement.
+    try {
+        aircraftDb = new Database(`${__dirname}/aircraft.db`, { fileMustExist: true });
+    }
+    catch (err) {
+        console.log(`Aircraft database not loaded (run provisioning/import-aircraft-db.js to enable it): ${err.message}`);
     }
 }
 
@@ -360,6 +371,35 @@ try {
             res.writeHead(502);
             res.end(JSON.stringify({ error: "Failed to fetch OpenSky traffic" }));
         }
+    });
+
+    // Batch icao24 -> {registration, manufacturer, model, operator, category}
+    // lookup against the optional local aircraft database (see
+    // provisioning/import-aircraft-db.js). Returns {} for every icao24 if
+    // the database hasn't been imported.
+    app.post("/aircraft/batch", (req, res) => {
+        const icao24s = Array.isArray(req.body?.icao24s) ? req.body.icao24s : [];
+        const result = {};
+
+        if (aircraftDb && icao24s.length > 0) {
+            const placeholders = icao24s.map(() => "?").join(",");
+            const stmt = aircraftDb.prepare(
+                `SELECT icao24, registration, manufacturer, model, operator, category FROM aircraft WHERE icao24 IN (${placeholders})`
+            );
+            const sanitized = icao24s.map((v) => String(v).toLowerCase());
+            for (const row of stmt.all(...sanitized)) {
+                result[row.icao24] = {
+                    registration: row.registration,
+                    manufacturer: row.manufacturer,
+                    model: row.model,
+                    operator: row.operator,
+                    category: row.category
+                };
+            }
+        }
+
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
     });
 
     app.get("/databaselist", (req, res) => {
