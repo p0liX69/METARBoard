@@ -54,11 +54,16 @@ fi
 
 echo "==> Copying app to ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
+# charts/ is intentionally excluded: .mbtiles files are too large for git
+# (see provisioning/README.md for how to get them onto the device) and must
+# never be touched by --delete here, or a re-provision would wipe them out.
 rsync -a --delete \
     --exclude 'node_modules' \
     --exclude '.git' \
     --exclude 'settings.json' \
+    --exclude 'charts' \
     "${REPO_ROOT}/" "${INSTALL_DIR}/"
+mkdir -p "${INSTALL_DIR}/charts"
 
 echo "==> Seeding settings.json from settings.default.json (only if missing)"
 if [[ ! -f "${INSTALL_DIR}/settings.json" ]]; then

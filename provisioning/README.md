@@ -42,16 +42,39 @@ on boot).
 The script is safe to re-run — it won't clobber an existing `settings.json`,
 and it skips steps that are already done (Node install, user creation).
 
-## 5. Verify
+## 5. Copy the chart data onto the device
+
+**`charts/*.mbtiles` are not in this git repo** — they're several GB each
+(8+ GB total across all regions) and are deliberately `.gitignore`d, so step
+3/4 above will leave `/opt/metarboard/charts` empty. Copy them separately
+from wherever you keep them (e.g. a dev machine that already has this repo
+checked out with its charts), directly into the install directory:
+
+```bash
+# run from the machine that HAS the charts, not from the Pi
+rsync -avz --progress ~/GitHub/METARBoard/charts/ pi@<pi-ip>:/opt/metarboard/charts/
+```
+
+Then fix ownership and restart so the server picks them up (chart databases
+are loaded once at startup):
+
+```bash
+ssh pi@<pi-ip> 'sudo chown -R metarboard:metarboard /opt/metarboard/charts && sudo systemctl restart metarboard'
+```
+
+Re-running `setup-pi.sh` later will not touch or delete this directory.
+
+## 6. Verify
 
 ```bash
 systemctl status metarboard      # should show "active (running)"
 journalctl -u metarboard -f      # live logs
+curl -s http://localhost:8500/databaselist   # should list your chart regions, not []
 ```
 
 Then open `http://<pi-ip>:8500` in a browser.
 
-## 6. Configure
+## 7. Configure
 
 There's no setup wizard yet (see the project's productization plan for that
 follow-up work) — edit `/opt/metarboard/settings.json` directly for things
@@ -77,5 +100,7 @@ chart/position-history databases already on the device.
   engine fails to load, so a total failure to start usually means a Node.js
   or `npm ci` problem — check `node -v` matches what's expected and that
   `/opt/metarboard/node_modules` exists.
-- **Charts not showing:** confirm `/opt/metarboard/charts/*.mbtiles` exist
-  and are owned by the `metarboard` user (`ls -la /opt/metarboard/charts`).
+- **Charts not showing / `databaselist` returns `[]`:** you likely haven't
+  done step 5 yet (`charts/*.mbtiles` are not in git). Confirm the files
+  exist and are readable by the `metarboard` user
+  (`ls -la /opt/metarboard/charts`), then restart the service.
