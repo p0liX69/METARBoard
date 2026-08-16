@@ -328,19 +328,30 @@ try {
     });
 
     // Proxies OpenSky traffic requests so credentials stay server-side and
-    // the browser isn't subject to OpenSky's CORS restrictions.
+    // the browser isn't subject to OpenSky's CORS restrictions. OpenSky uses
+    // OAuth2 client-credentials auth (OPENSKY_CLIENT_ID/OPENSKY_CLIENT_SECRET
+    // in /opt/metarboard/.env, never committed to git) - the access token is
+    // cached and refreshed shortly before its ~30 minute expiry.
     app.get("/opensky/states", async (req, res) => {
         try {
             const { lamin, lomin, lamax, lomax } = req.query;
             const params = new URLSearchParams({ lamin, lomin, lamax, lomax });
-            const username = process.env.OPEN_SKY_USERNAME || "";
-            const password = process.env.OPEN_SKY_PASSWORD || "";
-            const headers = username && password
-                ? { Authorization: "Basic " + Buffer.from(`${username}:${password}`).toString("base64") }
-                : {};
+
+            const token = await getOpenSkyAccessToken();
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
             const openSkyResponse = await fetch(`https://opensky-network.org/api/states/all?${params}`, { headers });
-            const data = await openSkyResponse.json();
+            const rawBody = await openSkyResponse.text();
+            let data;
+            try {
+                data = JSON.parse(rawBody);
+            }
+            catch {
+                console.log(`OpenSky returned a non-JSON response (status ${openSkyResponse.status}): ${rawBody}`);
+                res.writeHead(502);
+                res.end(JSON.stringify({ error: "OpenSky returned an unexpected response" }));
+                return;
+            }
             res.writeHead(openSkyResponse.status);
             res.end(JSON.stringify(data));
         }
@@ -512,7 +523,13 @@ function loadTile(z, x, y, response, db) {
         let sql = `SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?`;
         let row = db.prepare(sql).get(z, x, y);
         if (row !== undefined && row.tile_data != undefined) {
-            response.writeHead(200);
+            // Chart tiles are immutable for the lifetime of a deployed FAA
+            // chart cycle - cache aggressively so repeat views/reloads never
+            // re-fetch the same tile over the network.
+            response.writeHead(200, {
+                'Content-Type': 'image/webp',
+                'Cache-Control': 'public, max-age=2592000, immutable'
+            });
             response.write(row.tile_data);
             response.end();
         }
@@ -580,8 +597,46 @@ function tileToDegree(z, x, y) {
     return [lon, lat]
 }
 
+const OPENSKY_TOKEN_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+let openSkyAccessToken = null;
+let openSkyTokenExpiresAt = 0;
+
 /**
- * Recursively run the file downloads from the ADDS server for 
+ * Get a cached OpenSky OAuth2 access token, fetching/refreshing it via the
+ * client-credentials grant when missing or close to expiry. Returns null if
+ * no credentials are configured (traffic proxy then falls back to
+ * unauthenticated, rate-limited requests).
+ */
+async function getOpenSkyAccessToken() {
+    const clientId = process.env.OPENSKY_CLIENT_ID;
+    const clientSecret = process.env.OPENSKY_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return null;
+
+    if (openSkyAccessToken && Date.now() < openSkyTokenExpiresAt) {
+        return openSkyAccessToken;
+    }
+
+    const response = await fetch(OPENSKY_TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+            grant_type: "client_credentials",
+            client_id: clientId,
+            client_secret: clientSecret
+        })
+    });
+    if (!response.ok) {
+        throw new Error(`OpenSky token request failed: ${response.status}`);
+    }
+    const data = await response.json();
+    openSkyAccessToken = data.access_token;
+    // Refresh a minute early rather than right at expiry.
+    openSkyTokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
+    return openSkyAccessToken;
+}
+
+/**
+ * Recursively run the file downloads from the ADDS server for
  * metars, tafs, & pireps which will then be sent to client(s)
  */
 async function runDownloads() {

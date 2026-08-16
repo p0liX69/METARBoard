@@ -9,6 +9,27 @@ if (!localStorage.getItem("homeAirport")) {
 let hasCenteredOnHomeAirport = false;
 
 /**
+ * Show every chart whose real bounds overlap the current viewport, and
+ * hide the rest - so adjacent regions tile together like paper sectionals
+ * taped side by side, instead of only ever showing one fixed region.
+ * Nationwide reference charts (enroute, wall planning) are left alone for
+ * manual toggling, since they'd otherwise always match everywhere.
+ */
+function updateVisibleCharts() {
+    const viewExtent = map.getView().calculateExtent(map.getSize());
+    map.getLayers().forEach(layer => {
+        const title = layer.get("title");
+        if (!title || !title.toLowerCase().includes("chart")) return;
+
+        const lowerTitle = title.toLowerCase();
+        if (lowerTitle.includes("enroute") || lowerTitle.includes("wall planning")) return;
+
+        const chartExtent = layer.getExtent();
+        layer.setVisible(!!chartExtent && ol.extent.intersects(chartExtent, viewExtent));
+    });
+}
+
+/**
  * Center on the saved home airport. If a previous map view (center/zoom)
  * was saved, that view is restored instead so routine calls (e.g. after a
  * settings-triggered reload) don't clobber whatever the user last panned/
@@ -45,38 +66,7 @@ function centerOnHomeAirport() {
         }
 
         metarVectorLayer.setVisible(true);
-
-        // Enable the single regional chart whose bounds are centered
-        // closest to the home airport. Sectional bounding boxes overlap
-        // generously at their edges, so an "does it overlap" check tends to
-        // match several adjacent regions at once; nearest-center avoids that.
-        const homeCoord = apt.getGeometry().getCoordinates();
-        let closestChartLayer = null;
-        let closestDistance = Infinity;
-
-        map.getLayers().forEach(layer => {
-            const title = layer.get("title");
-            if (!title || !title.toLowerCase().includes("chart")) return;
-
-            const lowerTitle = title.toLowerCase();
-            layer.setVisible(false);
-            // Nationwide reference charts always cover any home airport by
-            // design; leave them for manual toggling instead of auto-stacking.
-            if (lowerTitle.includes("enroute") || lowerTitle.includes("wall planning")) return;
-
-            const chartExtent = layer.getExtent();
-            if (!chartExtent) return;
-            const chartCenter = ol.extent.getCenter(chartExtent);
-            const distance = Math.hypot(chartCenter[0] - homeCoord[0], chartCenter[1] - homeCoord[1]);
-            if (distance < closestDistance) {
-                closestDistance = distance;
-                closestChartLayer = layer;
-            }
-        });
-
-        if (closestChartLayer) {
-            closestChartLayer.setVisible(true);
-        }
+        updateVisibleCharts();
         setTimeout(() => {
             const metarFeature = metarFeatures.getArray().find(f => {
                 const metar = f.get("metar");
@@ -246,7 +236,6 @@ let airportVectorSource;
 let tafVectorSource;
 let pirepVectorSource;
 let trafficVectorSource;
-let animatedWxTileSource;
 
 /**
  * Vector layers
@@ -260,8 +249,16 @@ let trafficVectorLayer;
 /**
  * Tile layers
  */
-let animatedWxTileLayer;
-let debugTileLayer;  
+let debugTileLayer;
+
+/**
+ * Radar animation frames - one persistent WMS layer per historical
+ * timestamp, pre-created so playback just swaps visibility between
+ * already-loaded layers instead of re-fetching tiles every frame.
+ */
+let radarFrameLayers = [];
+let radarFrameTimestamps = [];
+let currentRadarFrameIndex = 0;
 
 /**
  * Websocket objects, flag, and message definition
@@ -282,8 +279,7 @@ let airplaneElement = document.getElementById('airplane');
  * Animation variables 
  */
 let animationId = null;
-let startDate = getTimeThreeHoursAgo();
-let frameRate = 1.0; // frames per second
+let frameRate = 0.33; // frames per second (one frame every 3s, gives tiles time to load)
 const animatecontrol = document.getElementById('wxbuttons');
 
 /**
@@ -352,11 +348,10 @@ async function loadInitialData() {
             }
             localStorage.setItem("homeAirport", settings.homeAirport);
         }
-        if (settings.animatedwxurl) {
-            animatedWxTileSource.setUrl(settings.animatedwxurl);
-        }
+        setupRadarAnimation();
         if (settings.showRadarByDefault) {
-            animatedWxTileLayer.setVisible(true);
+            showLatestRadarFrame();
+            setInterval(refreshRadarFrames, 5 * 60 * 1000);
         }
     }
     catch (err) {
@@ -380,6 +375,11 @@ async function loadInitialData() {
     }
 
     addChartLayers();
+    // Re-run chart auto-select now that chart layers actually exist on the
+    // map - centerOnHomeAirport() may have already run once (triggered by
+    // the independent us_airports.json fetch) before this point, in which
+    // case there was nothing to select yet. Idempotent, safe to call again.
+    centerOnHomeAirport();
 
     try {
         const response = await fetch(URL_GET_HISTORY);
@@ -853,6 +853,7 @@ map.on('moveend', function(e) {
     const moveendZoom = map.getView().getZoom();
     if (hasCenteredOnHomeAirport && Array.isArray(moveendCenter) && moveendCenter.every(Number.isFinite) && Number.isFinite(moveendZoom)) {
         localStorage.setItem("lastMapView", JSON.stringify({ center: moveendCenter, zoom: moveendZoom }));
+        updateVisibleCharts();
     }
 
     let newZoom = map.getView().getZoom();
@@ -1680,16 +1681,6 @@ function getScaleSize() {
 }
 
 /**
- * Tile source for animated weather
- */
-animatedWxTileSource = new ol.source.TileWMS({
-    attributions: ['Iowa State University'],
-    url: settings.animatedwxurl,
-    params: {'LAYERS': 'nexrad-n0r-wmst'},
-});
-
-
-/**
  * Add tile data for all layers
  */
 let extent = ol.proj.transformExtent(viewextent, 'EPSG:4326', 'EPSG:3857')
@@ -1700,14 +1691,6 @@ debugTileLayer = new ol.layer.Tile({
     visible: false,
     extent: extent,
     zIndex: 12
-});
-
-animatedWxTileLayer = new ol.layer.Tile({
-    title: "Animated Weather",
-    extent: extent,
-    source: animatedWxTileSource,
-    visible: false,
-    zIndex: 5
 });
 
 metarVectorSource = new ol.source.Vector({
@@ -1790,7 +1773,6 @@ map.addLayer(pirepVectorLayer);
 //if (settings.usestratux) {
 //    map.addLayer(trafficVectorLayer);
 //}
-map.addLayer(animatedWxTileLayer);
 
 function addChartLayers() {
     dblist.reverse();
@@ -1821,8 +1803,8 @@ function addChartLayers() {
                 type: metadata.type,
                 source: new ol.source.XYZ({
                     url: dburl,
-                    maxzoom: metadata.maxzoom,
-                    minzoom: metadata.minzoom,
+                    maxZoom: Number(metadata.maxzoom),
+                    minZoom: Number(metadata.minzoom),
                     attributions: settings.showattribution == true ? metadata.attribution : "",
                     attributionsCollapsible: false
                 }),
@@ -1848,12 +1830,6 @@ airportVectorLayer.on('change:visible', () => {
     }
 });
 
-animatedWxTileLayer.on('change:visible', () => {
-    let visible = animatedWxTileLayer.get('visible');
-    animatecontrol.style.visibility = visible ? 'visible' : 'hidden';
-    visible ? playWeatherRadar() : stopWeatherRadar()
-});
-
 /**
  * This allows a clicked feature to raise an event
  */
@@ -1872,33 +1848,101 @@ if (settings.savepositionhistory) {
 }
 
 /**
- * For weather animation, gets the time 3 hours ago
- * @returns Date
+ * Build one persistent WMS layer per historical radar timestamp (last 3
+ * hours, 15-minute steps, matching the NEXRAD update cadence). All frames
+ * are added to the map up front; playback just toggles visibility between
+ * them, so tiles for a given frame only ever need to load once, not on
+ * every animation tick. The newest frame is always "now" - never rounded
+ * into the future - so the default (non-animated) view always shows real,
+ * already-available data.
  */
-function getTimeThreeHoursAgo() {
-    return new Date(Math.round(Date.now() / 3600000) * 3600000 - 3600000 * 3);
+function setupRadarAnimation() {
+    const FRAME_COUNT = 12;
+    const STEP_MS = 15 * 60 * 1000;
+    const NEXRAD_UPDATE_MS = 5 * 60 * 1000;
+    // Floor (never round up into the future) to a clean 5-minute mark,
+    // matching NEXRAD's real update cadence - an arbitrary millisecond-
+    // precision "now" almost never matches an actual available WMS frame,
+    // which silently renders as empty/transparent tiles instead of an error.
+    const now = Math.floor(Date.now() / NEXRAD_UPDATE_MS) * NEXRAD_UPDATE_MS;
+
+    for (let i = 0; i < FRAME_COUNT; i++) {
+        const timestamp = new Date(now - STEP_MS * (FRAME_COUNT - 1 - i));
+        const source = new ol.source.TileWMS({
+            attributions: ['Iowa State University'],
+            url: settings.animatedwxurl,
+            params: { 'LAYERS': 'nexrad-n0r-wmst', 'TIME': timestamp.toISOString() }
+        });
+        const layer = new ol.layer.Tile({
+            title: 'Radar',
+            extent: extent,
+            source: source,
+            visible: false,
+            opacity: 0.65,
+            zIndex: 10.5
+        });
+        map.addLayer(layer);
+        radarFrameLayers.push(layer);
+        radarFrameTimestamps.push(timestamp);
+    }
+
+    currentRadarFrameIndex = radarFrameLayers.length - 1;
+}
+
+/**
+ * Discards the current radar frames and rebuilds them with fresh
+ * timestamps, so the "latest" frame stays current as real time passes.
+ * Only jumps the visible frame to the new latest if the animation loop
+ * isn't actively playing (so manual playback isn't interrupted).
+ */
+function refreshRadarFrames() {
+    const wasPlaying = animationId !== null;
+    radarFrameLayers.forEach(layer => map.removeLayer(layer));
+    radarFrameLayers = [];
+    radarFrameTimestamps = [];
+    setupRadarAnimation();
+    if (wasPlaying) {
+        playWeatherRadar();
+    }
+    else {
+        showLatestRadarFrame();
+    }
+}
+
+/**
+ * Show the newest radar frame without starting the animation loop - the
+ * default, ambient-display state.
+ */
+function showLatestRadarFrame() {
+    stopWeatherRadar();
+    radarFrameLayers.forEach(layer => layer.setVisible(false));
+    currentRadarFrameIndex = radarFrameLayers.length - 1;
+    radarFrameLayers[currentRadarFrameIndex].setVisible(true);
+    updateInfo();
 }
 
 /**
  * For displaying the animation time clock
  */
 function updateInfo() {
+    const timestamp = radarFrameTimestamps[currentRadarFrameIndex];
+    if (!timestamp) return;
     const el = document.getElementById('info');
-    el.innerHTML = getLocalTime(startDate.toString());
+    el.innerHTML = getLocalTime(timestamp.toString());
 }
 
 /**
- * Update the time clock  
+ * Advance to the next radar frame, wrapping back to the oldest after the
+ * newest. All frames are pre-loaded layers, so this is just a visibility
+ * swap - no network request on a normal tick.
  */
-function setTime() {
-    startDate.setMinutes(startDate.getMinutes() + 15);
-    if (startDate > Date.now()) {
-      startDate = getTimeThreeHoursAgo();
-    }
-    animatedWxTileSource.updateParams({'TIME': startDate.toISOString()});
+function advanceRadarFrame() {
+    if (radarFrameLayers.length === 0) return;
+    radarFrameLayers[currentRadarFrameIndex].setVisible(false);
+    currentRadarFrameIndex = (currentRadarFrameIndex + 1) % radarFrameLayers.length;
+    radarFrameLayers[currentRadarFrameIndex].setVisible(true);
     updateInfo();
 }
-setTime();
 
 /**
  * Stop the weather radar animation
@@ -1960,7 +2004,7 @@ setInterval(() => {
  */
 const playWeatherRadar = function () {
     stopWeatherRadar();
-    animationId = window.setInterval(setTime, 1000 / frameRate);
+    animationId = window.setInterval(advanceRadarFrame, 1000 / frameRate);
 };
 
 /**
