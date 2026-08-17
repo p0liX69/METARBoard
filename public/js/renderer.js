@@ -1455,24 +1455,52 @@ function processTraffic() {
         try {
             if (!item || !Number.isFinite(item.Lat) || !Number.isFinite(item.Lng)) continue;
 
+            const coord = ol.proj.fromLonLat([item.Lng, item.Lat]);
+            const tradians = (item.Track || 0) * Math.PI / 180;
+
             const trafficFeature = new ol.Feature({
-                geometry: new ol.geom.Point(ol.proj.fromLonLat([item.Lng, item.Lat])),
+                geometry: new ol.geom.Point(coord),
                 datatype: "traffic",
                 traffic: item
             });
-
-            const tradians = (item.Track || 0) * Math.PI / 180;
-
-            trafficFeature.setStyle(new ol.style.Style({
-                image: new ol.style.Icon({
-                    src: getTrafficIconSrc(item.Icao_addr),
-                    crossOrigin: 'anonymous',
-                    scale: 0.4,
-                    rotation: tradians
+            trafficFeature.setStyle([
+                // Dark halo behind the icon so it reads against any
+                // background (chart terrain, radar colors, etc.)
+                new ol.style.Style({
+                    image: new ol.style.Circle({
+                        radius: 16,
+                        fill: new ol.style.Fill({ color: 'rgba(0, 0, 0, 0.55)' })
+                    })
+                }),
+                new ol.style.Style({
+                    image: new ol.style.Icon({
+                        src: getTrafficIconSrc(item.Icao_addr),
+                        crossOrigin: 'anonymous',
+                        scale: 0.4,
+                        rotation: tradians
+                    })
                 })
-            }));
-
+            ]);
             trafficFeatures.push(trafficFeature);
+
+            // ForeFlight-style trend vector: a line showing where this
+            // aircraft will be in ~60 seconds at its current track/speed.
+            if (Number.isFinite(item.Speed) && item.Speed > 0) {
+                const speedMetersPerSec = item.Speed * 0.514444; // knots -> m/s
+                const vectorLengthMeters = speedMetersPerSec * 60;
+                const endCoord = [
+                    coord[0] + vectorLengthMeters * Math.sin(tradians),
+                    coord[1] + vectorLengthMeters * Math.cos(tradians)
+                ];
+                const vectorFeature = new ol.Feature({
+                    geometry: new ol.geom.LineString([coord, endCoord]),
+                    datatype: "traffic-vector"
+                });
+                vectorFeature.setStyle(new ol.style.Style({
+                    stroke: new ol.style.Stroke({ color: '#ffcc00', width: 2 })
+                }));
+                trafficFeatures.push(vectorFeature);
+            }
         }
         catch (err) {
             // Isolate one malformed entry from the rest of the rebuild -
