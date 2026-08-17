@@ -3,6 +3,37 @@ html, body {
     height: 100%;
     width: 100%;
 }
+.digital-clock {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    background-color: rgba(0, 0, 0, 0.8);
+    border: 2px solid #00ff66;
+    border-radius: 8px;
+    padding: 10px 18px;
+    z-index: 1000;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    font-family: 'Courier New', monospace;
+}
+.digital-clock .clock-row {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    white-space: nowrap;
+}
+.digital-clock .clock-label {
+    color: #66ffaa;
+    font-weight: bold;
+    font-size: 16px;
+    letter-spacing: 1px;
+    width: 34px;
+}
+.digital-clock .clock-value {
+    color: #00ff66;
+    font-size: 28px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
+}
 #map {
     position: absolute;
     top:0px;

@@ -351,36 +351,44 @@ const regioncontrol = document.getElementById('isoregion');
 const regionselect = document.getElementById("regionselect");
 let regionmap = new Map();
 
-// Floating clock overlay
+// Floating digital clock overlay
 const clockContainer = document.createElement("div");
-clockContainer.style.position = "absolute";
-clockContainer.style.top = "10px";
-clockContainer.style.right = "10px";
-clockContainer.style.backgroundColor = "rgba(0,0,0,0.5)";
-clockContainer.style.color = "white";
-clockContainer.style.padding = "6px 10px";
-clockContainer.style.borderRadius = "5px";
-clockContainer.style.fontFamily = "monospace";
-clockContainer.style.zIndex = "1000";
-clockContainer.style.fontSize = "20px";
+clockContainer.className = "digital-clock";
 clockContainer.id = "clockOverlay";
 document.body.appendChild(clockContainer);
 
+/**
+ * The IANA timezone to display "Local" time in, from /admin's Timezone
+ * setting - falls back to the browser/OS default if unset, which is the
+ * old behavior (and is wrong for a kiosk shipped to a different timezone
+ * than it was originally imaged in).
+ * @returns {string}
+ */
+function getConfiguredTimeZone() {
+    return (settings && settings.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+function formatDateTimeParts(date, timeZone, hour12) {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12
+    });
+    const parts = formatter.formatToParts(date);
+    const get = (type) => parts.find((p) => p.type === type)?.value || "";
+    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
 
 function updateClockOverlay() {
     const now = new Date();
+    const formattedLocal = formatDateTimeParts(now, getConfiguredTimeZone(), false);
+    const formattedUtc = formatDateTimeParts(now, 'UTC', false);
 
-    // Format local time using 24-hour format
-    const localDate = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
-    const localTime = now.toLocaleTimeString('en-GB'); // 24-hour time
-    const formattedLocal = `${localDate} ${localTime}`;
-
-    // Format UTC time
-    const utcDate = now.toISOString().split("T")[0];
-    const utcTime = now.toISOString().split("T")[1].split(".")[0]; // 24-hour format
-    const formattedUtc = `${utcDate} ${utcTime}`;
-
-    clockContainer.innerHTML = `Local: ${formattedLocal}<br>Zulu: ${formattedUtc}`;
+    clockContainer.innerHTML = `
+        <div class="clock-row"><span class="clock-label">LCL</span><span class="clock-value">${formattedLocal}</span></div>
+        <div class="clock-row"><span class="clock-label">UTC</span><span class="clock-value">${formattedUtc}</span></div>
+    `;
 }
 
 setInterval(updateClockOverlay, 1000);
@@ -2450,59 +2458,16 @@ function formatZuluDate(zuludate) {
  * @returns string: the translated date in standard or daylight time
  */
  function getLocalTime(zuludate) {
-    let date = new Date(zuludate);
-    let hours = date.getHours();
-    let minutes = date.getMinutes();
-    let ampm = hours >= 12 ? 'PM' : 'AM';
-    let month = date.getMonth() + 1;
-    let day = date.getDate();
-    let year = date.getFullYear();
-    let tzone = "";
-
-    hours = hours % 12;
-    hours = hours ? hours : 12; // the hour '0' should be '12'
-    minutes = minutes < 10 ? '0'+minutes : minutes;
-
-    let timex = date.toString().split("GMT");
-    let time = timex[1];
-
-    if (time.search("Eastern Standard") > -1) {
-        tzone = "(EST)"; 
-    }
-    if (time.search("Eastern Daylignt") > -1) {
-        tzone = "(EDT)"; 
-    }
-    if (time.search("Central Standard") > -1) {
-        tzone = "(CST)"; 
-    }
-    if (time.search("Central Daylight") > -1) {
-        tzone = "(CDT)"; 
-    }
-    if (time.search("Mountain Standard") > -1) {
-        tzone = "(MST)"; 
-    }
-    if (time.search("Mountain Daylight") > -1) {
-        tzone = "(MDT)"; 
-    }
-    if (time.search("Pacific Standard") > -1) {
-        tzone = "(PST)"; 
-    }
-    if (time.search("Pacific Daylight") > -1) {
-        tzone = "(PDT)"; 
-    }
-    if (time.search("Alaska Standard") > -1) {
-        tzone = "(AKST)"; 
-    }
-    if (time.search("Alaska Daylight") > -1) {
-        tzone = "(AKDT)"; 
-    }
-    if (time.search("Atlantic Standard") > -1) {
-        tzone = "(AST)"; 
-    }
-    if (time.search("Atlantic Daylight") > -1) {
-        tzone = "(ADT)";
-    }
-    return `${month}-${day}-${year} ${hours}:${minutes} ${ampm} ${tzone}`;
+    const date = new Date(zuludate);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: getConfiguredTimeZone(),
+        month: 'numeric', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+        timeZoneName: 'short'
+    });
+    const parts = formatter.formatToParts(date);
+    const get = (type) => parts.find((p) => p.type === type)?.value || "";
+    return `${get('month')}-${get('day')}-${get('year')} ${get('hour')}:${get('minute')} ${get('dayPeriod')} (${get('timeZoneName')})`;
 }
 
 /**

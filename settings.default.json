@@ -6,6 +6,7 @@
     "startupzoom": 11,
     "useOSMonlinemap": false,
     "homeAirport": "KHGR",
+    "timezone": "America/New_York",
     "showRadarByDefault": true,
     "debug": false,
     "externalcharts": "",

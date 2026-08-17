@@ -26,6 +26,11 @@
       width: 100px;
       margin-top: 6px;
     }
+    select {
+      font-size: 18px;
+      padding: 6px;
+      margin-top: 6px;
+    }
     .checkbox-row {
       display: flex;
       align-items: center;
@@ -67,6 +72,18 @@
   <label for="startupzoom">Default Zoom Level (1-20)</label>
   <input type="number" id="startupzoom" min="1" max="20" step="1">
 
+  <label for="timezone">Timezone</label>
+  <select id="timezone">
+    <option value="America/New_York">Eastern</option>
+    <option value="America/Chicago">Central</option>
+    <option value="America/Denver">Mountain</option>
+    <option value="America/Phoenix">Mountain (Arizona, no DST)</option>
+    <option value="America/Los_Angeles">Pacific</option>
+    <option value="America/Anchorage">Alaska</option>
+    <option value="Pacific/Honolulu">Hawaii</option>
+    <option value="UTC">UTC</option>
+  </select>
+
   <div class="checkbox-row">
     <input type="checkbox" id="showRadarByDefault">
     <label for="showRadarByDefault">Show live radar by default</label>
@@ -83,6 +100,7 @@
   <script>
     const homeAirportInput = document.getElementById("homeAirport");
     const startupzoomInput = document.getElementById("startupzoom");
+    const timezoneSelect = document.getElementById("timezone");
     const showRadarCheckbox = document.getElementById("showRadarByDefault");
     const useOSMCheckbox = document.getElementById("useOSMonlinemap");
     const saveBtn = document.getElementById("saveBtn");
@@ -98,6 +116,9 @@
       .then(settings => {
         homeAirportInput.value = settings.homeAirport || "";
         startupzoomInput.value = settings.startupzoom || "";
+        if (settings.timezone) {
+          timezoneSelect.value = settings.timezone;
+        }
         showRadarCheckbox.checked = !!settings.showRadarByDefault;
         useOSMCheckbox.checked = !!settings.useOSMonlinemap;
       })
@@ -122,6 +143,7 @@
         body: JSON.stringify({
           homeAirport: icao,
           startupzoom: startupzoom,
+          timezone: timezoneSelect.value,
           showRadarByDefault: showRadarCheckbox.checked,
           useOSMonlinemap: useOSMCheckbox.checked
         })

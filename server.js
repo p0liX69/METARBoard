@@ -328,6 +328,15 @@ try {
         startupzoom: (value) => {
             const zoom = Number(value);
             return Number.isInteger(zoom) && zoom >= 1 && zoom <= 20 ? zoom : undefined;
+        },
+        timezone: (value) => {
+            try {
+                Intl.DateTimeFormat('en-US', { timeZone: value });
+                return value;
+            }
+            catch {
+                return undefined;
+            }
         }
     };
 
