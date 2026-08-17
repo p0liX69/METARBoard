@@ -384,7 +384,11 @@ async function loadInitialData() {
 
         if (settings.startupzoom != null) {
             const previousStartupZoom = localStorage.getItem("startupzoom");
-            if (previousStartupZoom && Number(previousStartupZoom) !== settings.startupzoom) {
+            // Note: Number(null) is 0, so this also clears on the very first
+            // run (before "startupzoom" has ever been recorded) rather than
+            // only on later changes - otherwise a view saved before this
+            // tracking existed would survive untouched forever.
+            if (Number(previousStartupZoom) !== settings.startupzoom) {
                 // Configured default zoom changed - forget the saved view so
                 // the new default actually takes effect instead of restoring
                 // whatever zoom level was saved under the old default.
