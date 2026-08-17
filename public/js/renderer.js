@@ -351,11 +351,16 @@ const regioncontrol = document.getElementById('isoregion');
 const regionselect = document.getElementById("regionselect");
 let regionmap = new Map();
 
-// Floating digital clock overlay
-const clockContainer = document.createElement("div");
-clockContainer.className = "digital-clock";
-clockContainer.id = "clockOverlay";
-document.body.appendChild(clockContainer);
+// Floating wall-clock overlays: local time top-left, Zulu top-right
+const localClockContainer = document.createElement("div");
+localClockContainer.className = "wall-clock wall-clock-local";
+localClockContainer.id = "clockLocal";
+document.body.appendChild(localClockContainer);
+
+const utcClockContainer = document.createElement("div");
+utcClockContainer.className = "wall-clock wall-clock-utc";
+utcClockContainer.id = "clockUtc";
+document.body.appendChild(utcClockContainer);
 
 /**
  * The IANA timezone to display "Local" time in, from /admin's Timezone
@@ -368,26 +373,30 @@ function getConfiguredTimeZone() {
     return (settings && settings.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-function formatDateTimeParts(date, timeZone, hour12) {
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12
-    });
-    const parts = formatter.formatToParts(date);
-    const get = (type) => parts.find((p) => p.type === type)?.value || "";
-    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+function formatWallClock(date, timeZone) {
+    const time = new Intl.DateTimeFormat('en-CA', {
+        timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).format(date);
+    const dateStr = new Intl.DateTimeFormat('en-US', {
+        timeZone, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
+    }).format(date);
+    return { time, date: dateStr };
 }
 
 function updateClockOverlay() {
     const now = new Date();
-    const formattedLocal = formatDateTimeParts(now, getConfiguredTimeZone(), false);
-    const formattedUtc = formatDateTimeParts(now, 'UTC', false);
+    const local = formatWallClock(now, getConfiguredTimeZone());
+    const utc = formatWallClock(now, 'UTC');
 
-    clockContainer.innerHTML = `
-        <div class="clock-row"><span class="clock-label">LCL</span><span class="clock-value">${formattedLocal}</span></div>
-        <div class="clock-row"><span class="clock-label">UTC</span><span class="clock-value">${formattedUtc}</span></div>
+    localClockContainer.innerHTML = `
+        <div class="wall-clock-label">LOCAL</div>
+        <div class="wall-clock-time">${local.time}</div>
+        <div class="wall-clock-date">${local.date}</div>
+    `;
+    utcClockContainer.innerHTML = `
+        <div class="wall-clock-label">ZULU</div>
+        <div class="wall-clock-time">${utc.time}</div>
+        <div class="wall-clock-date">${utc.date}</div>
     `;
 }
 

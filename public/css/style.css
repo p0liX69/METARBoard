@@ -3,35 +3,55 @@ html, body {
     height: 100%;
     width: 100%;
 }
-.digital-clock {
+.wall-clock {
     position: fixed;
     top: 14px;
-    right: 14px;
-    background-color: rgba(0, 0, 0, 0.8);
-    border: 2px solid #00ff66;
-    border-radius: 8px;
-    padding: 10px 18px;
+    background: linear-gradient(180deg, #1a1a1a, #000);
+    border: 3px solid #2a2a2a;
+    border-radius: 14px;
+    padding: 10px 24px 14px;
     z-index: 1000;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5), inset 0 0 24px rgba(0,0,0,0.6);
+    text-align: center;
     font-family: 'Courier New', monospace;
 }
-.digital-clock .clock-row {
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    white-space: nowrap;
+.wall-clock-local {
+    left: 14px;
 }
-.digital-clock .clock-label {
-    color: #66ffaa;
+.wall-clock-utc {
+    right: 14px;
+}
+.wall-clock-label {
+    font-size: 15px;
     font-weight: bold;
-    font-size: 16px;
-    letter-spacing: 1px;
-    width: 34px;
+    letter-spacing: 4px;
+    margin-bottom: 2px;
 }
-.digital-clock .clock-value {
-    color: #00ff66;
-    font-size: 28px;
+.wall-clock-local .wall-clock-label {
+    color: #39ff14;
+}
+.wall-clock-utc .wall-clock-label {
+    color: #00e5ff;
+}
+.wall-clock-time {
+    font-size: 54px;
+    font-weight: bold;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
+    letter-spacing: 2px;
+}
+.wall-clock-local .wall-clock-time {
+    color: #39ff14;
+    text-shadow: 0 0 8px rgba(57,255,20,0.75), 0 0 22px rgba(57,255,20,0.45);
+}
+.wall-clock-utc .wall-clock-time {
+    color: #00e5ff;
+    text-shadow: 0 0 8px rgba(0,229,255,0.75), 0 0 22px rgba(0,229,255,0.45);
+}
+.wall-clock-date {
+    font-size: 14px;
+    color: #999;
+    margin-top: 4px;
     letter-spacing: 1px;
 }
 #map {
