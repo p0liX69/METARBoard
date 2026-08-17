@@ -147,7 +147,13 @@ PREVIOUS_TARGET="$(readlink -f "${INSTALL_DIR}" || true)"
 log "swapping ${INSTALL_DIR} -> ${NEW_RELEASE_DIR}"
 ln -sfn "${NEW_RELEASE_DIR}" "${WORKDIR}/metarboard-link"
 mv -Tf "${WORKDIR}/metarboard-link" "${INSTALL_DIR}"
-systemctl restart metarboard
+# reset-failed first: if a previous attempt crash-looped, systemd's
+# StartLimitBurst may still be blocking new start attempts entirely -
+# confirmed live during testing (a broken release crash-looped fast
+# enough to trip the limit within the health-check window, which then
+# silently blocked the *rollback's* restart too).
+systemctl reset-failed metarboard || true
+systemctl restart metarboard || true
 
 log "health-checking new release"
 HEALTHY=0
@@ -177,10 +183,18 @@ if [[ "${HEALTHY}" -eq 1 ]]; then
 fi
 
 log "health check failed - rolling back"
+ROLLBACK_RESTARTED=0
 if [[ -n "${PREVIOUS_TARGET}" && -d "${PREVIOUS_TARGET}" ]]; then
     ln -sfn "${PREVIOUS_TARGET}" "${WORKDIR}/metarboard-link"
     mv -Tf "${WORKDIR}/metarboard-link" "${INSTALL_DIR}"
-    systemctl restart metarboard
+    systemctl reset-failed metarboard || true
+    if systemctl restart metarboard; then
+        ROLLBACK_RESTARTED=1
+    fi
 fi
 rm -rf "${NEW_RELEASE_DIR}"
-fail "release ${LATEST_TAG} failed its health check - rolled back to ${CURRENT_VERSION}"
+if [[ "${ROLLBACK_RESTARTED}" -eq 1 ]]; then
+    fail "release ${LATEST_TAG} failed its health check - rolled back to ${CURRENT_VERSION}"
+else
+    fail "release ${LATEST_TAG} failed its health check AND the rollback restart also failed - device may be down, needs manual intervention"
+fi
