@@ -54,6 +54,18 @@ html, body {
     margin-top: 4px;
     letter-spacing: 1px;
 }
+#nightDimOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9999;
+    transition: opacity 3s linear;
+}
 #map {
     position: absolute;
     top:0px;

@@ -20,7 +20,9 @@
       margin-top: 20px;
       font-weight: bold;
     }
-    input[type="text"] {
+    input[type="text"],
+    input[type="time"],
+    input[type="number"] {
       font-size: 18px;
       padding: 6px;
       width: 100px;
@@ -104,6 +106,22 @@
     <label for="useOSMonlinemap">Show OpenStreetMap street map background (requires internet)</label>
   </div>
 
+  <div class="checkbox-row">
+    <input type="checkbox" id="nightDimEnabled">
+    <label for="nightDimEnabled">Dim the display at night</label>
+  </div>
+
+  <div id="nightDimFields">
+    <label for="nightDimStart">Dim from</label>
+    <input type="time" id="nightDimStart">
+
+    <label for="nightDimEnd">Until</label>
+    <input type="time" id="nightDimEnd">
+
+    <label for="nightDimOpacity">Dim strength (0-90%)</label>
+    <input type="number" id="nightDimOpacity" min="0" max="90" step="5">
+  </div>
+
   <button id="saveBtn">Save</button>
   <div id="status"></div>
 
@@ -113,6 +131,10 @@
     const timezoneSelect = document.getElementById("timezone");
     const showRadarCheckbox = document.getElementById("showRadarByDefault");
     const useOSMCheckbox = document.getElementById("useOSMonlinemap");
+    const nightDimEnabledCheckbox = document.getElementById("nightDimEnabled");
+    const nightDimStartInput = document.getElementById("nightDimStart");
+    const nightDimEndInput = document.getElementById("nightDimEnd");
+    const nightDimOpacityInput = document.getElementById("nightDimOpacity");
     const saveBtn = document.getElementById("saveBtn");
     const statusEl = document.getElementById("status");
 
@@ -141,6 +163,10 @@
         }
         showRadarCheckbox.checked = !!settings.showRadarByDefault;
         useOSMCheckbox.checked = !!settings.useOSMonlinemap;
+        nightDimEnabledCheckbox.checked = !!settings.nightDimEnabled;
+        nightDimStartInput.value = settings.nightDimStart || "22:00";
+        nightDimEndInput.value = settings.nightDimEnd || "06:00";
+        nightDimOpacityInput.value = settings.nightDimOpacity ?? 70;
       })
       .catch(err => setStatus("Failed to load current settings: " + err.message, true));
 
@@ -157,6 +183,12 @@
         return;
       }
 
+      const nightDimOpacity = Number(nightDimOpacityInput.value);
+      if (!Number.isInteger(nightDimOpacity) || nightDimOpacity < 0 || nightDimOpacity > 90) {
+        setStatus("Dim strength must be a whole number from 0 to 90.", true);
+        return;
+      }
+
       fetch("/savesettings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -165,7 +197,11 @@
           startupzoom: startupzoom,
           timezone: timezoneSelect.value,
           showRadarByDefault: showRadarCheckbox.checked,
-          useOSMonlinemap: useOSMCheckbox.checked
+          useOSMonlinemap: useOSMCheckbox.checked,
+          nightDimEnabled: nightDimEnabledCheckbox.checked,
+          nightDimStart: nightDimStartInput.value,
+          nightDimEnd: nightDimEndInput.value,
+          nightDimOpacity: nightDimOpacity
         })
       })
         .then(res => {

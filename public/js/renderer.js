@@ -362,6 +362,53 @@ utcClockContainer.className = "wall-clock wall-clock-utc";
 utcClockContainer.id = "clockUtc";
 document.body.appendChild(utcClockContainer);
 
+// Software night-dimming overlay. There's no standard way to control an
+// arbitrary HDMI TV's actual backlight from the Pi side (no DDC/CI
+// support to assume), so "dimming" here means reducing this page's own
+// output via a black overlay - the same approach most software-only
+// night modes use when they don't control real display hardware.
+const nightDimOverlay = document.createElement("div");
+nightDimOverlay.id = "nightDimOverlay";
+document.body.appendChild(nightDimOverlay);
+
+/**
+ * @returns {number} minutes since local midnight, in the configured timezone
+ */
+function getLocalMinutesOfDay(date, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone, hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(date);
+    const get = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
+    return get('hour') * 60 + get('minute');
+}
+
+function parseHHMM(value) {
+    const [h, m] = String(value || "").split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+}
+
+function updateNightDimOverlay() {
+    if (!settings || !settings.nightDimEnabled) {
+        nightDimOverlay.style.opacity = 0;
+        return;
+    }
+
+    const startMinutes = parseHHMM(settings.nightDimStart);
+    const endMinutes = parseHHMM(settings.nightDimEnd);
+    if (startMinutes === null || endMinutes === null || startMinutes === endMinutes) {
+        nightDimOverlay.style.opacity = 0;
+        return;
+    }
+
+    const nowMinutes = getLocalMinutesOfDay(new Date(), getConfiguredTimeZone());
+    const withinWindow = startMinutes < endMinutes
+        ? (nowMinutes >= startMinutes && nowMinutes < endMinutes)
+        : (nowMinutes >= startMinutes || nowMinutes < endMinutes); // wraps past midnight
+
+    const opacityPercent = Number.isFinite(settings.nightDimOpacity) ? settings.nightDimOpacity : 70;
+    nightDimOverlay.style.opacity = withinWindow ? opacityPercent / 100 : 0;
+}
+
 /**
  * The IANA timezone to display "Local" time in, from /admin's Timezone
  * setting - falls back to the browser/OS default if unset, which is the
@@ -400,8 +447,12 @@ function updateClockOverlay() {
     `;
 }
 
-setInterval(updateClockOverlay, 1000);
+setInterval(() => {
+    updateClockOverlay();
+    updateNightDimOverlay();
+}, 1000);
 updateClockOverlay();
+updateNightDimOverlay();
 
 /**
  * Load settings, metadatasets, database list, and last known position
