@@ -54,6 +54,30 @@ async function fetchHomeAirspace(icao) {
     }
 }
 
+const TFR_REFRESH_MS = 15 * 60 * 1000;
+
+/**
+ * Fetch active nationwide FAA TFRs (via the server-side /tfrs proxy, which
+ * joins FAA's list API to its WFS boundary geometry) and render them.
+ * Refetched periodically since, unlike airspace boundaries, TFRs come and
+ * go throughout the day.
+ */
+async function fetchTfrs() {
+    try {
+        const response = await fetch(URL_GET_TFRS);
+        const geojson = await response.json();
+        const features = new ol.format.GeoJSON().readFeatures(geojson, {
+            featureProjection: 'EPSG:3857'
+        });
+        features.forEach((feature) => feature.set("datatype", "tfr"));
+        tfrFeatures.clear();
+        tfrFeatures.extend(features);
+    }
+    catch (err) {
+        console.log("Failed to load TFRs:", err);
+    }
+}
+
 /**
  * Center on the saved home airport. If a previous map view (center/zoom)
  * was saved, that view is restored instead so routine calls (e.g. after a
@@ -146,6 +170,7 @@ let URL_GET_SETTINGS        = `${URL_SERVER}/getsettings`;
 let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
 let URL_GET_HELIPORTS       = `${URL_SERVER}/getheliports`;
 let URL_GET_HOME_AIRSPACE   = `${URL_SERVER}/homeairspace`;
+let URL_GET_TFRS            = `${URL_SERVER}/tfrs`;
 
 let deg = 0;
 let alt = 0;
@@ -209,6 +234,7 @@ let lastcriteria = "allregions";
  * Map objects used for various keyname lookups
  */
 let airportNameKeymap = new Map();
+let airportElevationKeymap = new Map();
 
 const AIRPORTS_RETRY_BASE_DELAY_MS = 1000;
 const AIRPORTS_RETRY_MAX_DELAY_MS = 30000;
@@ -258,6 +284,7 @@ let pirepFeatures = new ol.Collection();
 let trafficFeatures = new ol.Collection();
 let homeAirspaceFeatures = new ol.Collection();
 let homeAirspaceIcaoFetched = null;
+let tfrFeatures = new ol.Collection();
 
 /**
  * Vector sources
@@ -268,6 +295,7 @@ let tafVectorSource;
 let pirepVectorSource;
 let trafficVectorSource;
 let homeAirspaceVectorSource;
+let tfrVectorSource;
 
 /**
  * Vector layers
@@ -278,6 +306,7 @@ let tafVectorLayer;
 let pirepVectorLayer;
 let trafficVectorLayer;
 let homeAirspaceVectorLayer;
+let tfrVectorLayer;
 
 /**
  * Tile layers
@@ -401,6 +430,9 @@ async function loadInitialData() {
             showLatestRadarFrame();
             setInterval(refreshRadarFrames, 5 * 60 * 1000);
         }
+
+        fetchTfrs();
+        setInterval(fetchTfrs, TFR_REFRESH_MS);
     }
     catch (err) {
         console.log(err);
@@ -699,6 +731,19 @@ function homeAirspaceStyle(feature) {
     });
 }
 
+// Hazard-orange dashed outline for active TFRs - deliberately loud since
+// these are safety notices, not routine airspace/chart reference.
+const tfrStyle = new ol.style.Style({
+    stroke: new ol.style.Stroke({
+        color: 'rgba(255, 60, 0, 0.95)',
+        width: 3,
+        lineDash: [10, 6]
+    }),
+    fill: new ol.style.Fill({
+        color: 'rgba(255, 60, 0, 0.12)'
+    })
+});
+
 /**
  * Load airports into their feature collection 
  * @param {jsonobj} airport JSON object 
@@ -736,6 +781,7 @@ function processAirports(jsonobj) {
             }
             airportFeatures.push(airportFeature);
             airportNameKeymap.set(airport.ident, airport.name);
+            airportElevationKeymap.set(airport.ident, airport.elev);
             airportFeature.changed();
         }
  
@@ -965,6 +1011,8 @@ map.on('click', (evt) => {
                 displayPirepPopup(feature);
             } else if (datatype === "airport") {
                 displayAirportPopup(feature);
+            } else if (datatype === "tfr") {
+                displayTfrPopup(feature);
             }
     
             let coordinate = evt.coordinate;
@@ -991,6 +1039,39 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+}
+
+/**
+ * Standard density altitude formula: pressure altitude corrects field
+ * elevation for non-standard pressure, then density altitude corrects
+ * that for non-standard (ISA) temperature.
+ * @param {number} elevationFt field elevation, feet MSL
+ * @param {number} tempC current outside air temperature, Celsius
+ * @param {number} altimeterInHg current altimeter setting, inHg
+ * @returns {number|null} density altitude in feet, or null if inputs are missing
+ */
+function calculateDensityAltitude(elevationFt, tempC, altimeterInHg) {
+    if (!Number.isFinite(elevationFt) || !Number.isFinite(tempC) || !Number.isFinite(altimeterInHg)) {
+        return null;
+    }
+    const pressureAltitude = elevationFt + (29.92 - altimeterInHg) * 1000;
+    const isaTempC = 15 - (2 * pressureAltitude / 1000);
+    return Math.round(pressureAltitude + 120 * (tempC - isaTempC));
+}
+
+/**
+ * Plain-language gloss for a flight category, for non-pilot/student viewers.
+ * @param {string} cat VFR/MVFR/IFR/LIFR
+ * @returns {string}
+ */
+function describeFlightCategory(cat) {
+    switch (cat) {
+        case "VFR": return "Good flying weather";
+        case "MVFR": return "Marginal - check ceilings/visibility";
+        case "IFR": return "Instrument conditions - not VFR flyable";
+        case "LIFR": return "Low instrument conditions - poor visibility/ceiling";
+        default: return "";
+    }
 }
 
 /**
@@ -1031,27 +1112,16 @@ function escapeHtml(value) {
     if (icingcondition !== undefined) {
         icingconditions = decodeIcingOrTurbulenceCondition(icingcondition, taflabelCssClass);
     }
-    
-    let label = `<label class="#class">`;
-    let css;
-    switch(cat) {
-        case "IFR":
-            css = label.replace("#class", "metarifr");
-            break;
-        case "LIFR":
-            css = label.replace("#class", "metarlifr");
-            break;
-        case "MVFR":
-            css = label.replace("#class", "metarmvfr");
-            break;
-        case "VFR":
-            css = label.replace("#class", "metarvfr");
-            break;
-    }
+
+    const elevationFt = airportElevationKeymap.get(ident);
+    const densityAlt = calculateDensityAltitude(elevationFt, tempC, parseFloat(metar.altim_in_hg));
+    const plainLanguage = describeFlightCategory(cat);
+
     if (ident != "undefined") {
         let name = getFormattedAirportName(ident);
         let html = `
     <div class="metar-header">${name}<br>${ident} - <span class="metar-category ${cat.toLowerCase()}">${cat}</span></div>
+    <div class="metar-plainlanguage">${plainLanguage}</div>
     <table class="metar-table">
       <tr><td>Time:</td><td>${time}</td></tr>
       <tr><td>Temp:</td><td>${tempC} °C (${temp})</td></tr>
@@ -1060,6 +1130,7 @@ function escapeHtml(value) {
       <tr><td>Altimeter:</td><td>${altim} inHg</td></tr>
       <tr><td>Visibility:</td><td>${vis}</td></tr>
       <tr><td>Sky cover:</td><td>${skyconditions || ""}</td></tr>
+      ${densityAlt !== null ? `<tr><td>Density Alt:</td><td>${densityAlt.toLocaleString()} ft</td></tr>` : ""}
     </table>
     <div class="wind-graphic">${svg}</div>
     <textarea class="rawdata">${escapeHtml(rawmetar)}</textarea>
@@ -1474,7 +1545,27 @@ function displayAirportPopup(feature) {
         html += `<label class="airportpopuplabel">${name} - ${ident}</label><p></p>`;
         html += `</p></code></pre></div>`;
         html += `<p><button class="ol-airport-closer" onclick="closePopup()">close</button></p>`;
-    popupcontent.innerHTML = html; 
+    popupcontent.innerHTML = html;
+}
+
+/**
+ * Build the html for a TFR (Temporary Flight Restriction) feature
+ * @param {*} feature: the TFR the user clicked on
+ */
+function displayTfrPopup(feature) {
+    const type = feature.get("type") || "TFR";
+    const description = feature.get("description") || "";
+    const notamId = feature.get("notam_id") || "";
+
+    let html = `<div><p>`;
+    html += `<label class="pirepitem"><b>${escapeHtml(type)}</b></label><br />`;
+    html += `<label class="pirepitem">${escapeHtml(description)}</label><br />`;
+    if (notamId) {
+        html += `<label class="pirepitem">NOTAM ${escapeHtml(notamId)}</label><br />`;
+    }
+    html += `</p></div>`;
+    html += `<p><button class="ol-popup-closer" onclick="closePopup()">close</button></p>`;
+    popupcontent.innerHTML = html;
 }
 
 /**
@@ -1910,6 +2001,19 @@ homeAirspaceVectorLayer = new ol.layer.Vector({
     zIndex: 10.6
 });
 map.addLayer(homeAirspaceVectorLayer);
+
+tfrVectorSource = new ol.source.Vector({
+    features: tfrFeatures
+});
+tfrVectorLayer = new ol.layer.Vector({
+    title: "TFRs",
+    source: tfrVectorSource,
+    style: tfrStyle,
+    visible: true,
+    extent: extent,
+    zIndex: 12.5
+});
+map.addLayer(tfrVectorLayer);
 
 if (settings.useOSMonlinemap) {
     const osmOnlineTileLayer = new ol.layer.Tile({

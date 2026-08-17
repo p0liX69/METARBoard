@@ -327,45 +327,53 @@ hr {
 
 .static-metar-popup {
     position: fixed;
-    bottom: 10px;
-    right: 10px;
+    bottom: 16px;
+    right: 16px;
     background-color: rgba(255, 255, 255, 0.95); /* subtle transparency */
-    border: 2px solid #333;
-    border-radius: 10px;
-    padding: 12px 16px;
+    border: 3px solid #333;
+    border-radius: 14px;
+    padding: 20px 26px;
     font-family: Arial, sans-serif;
-    font-size: 14px;
+    font-size: 20px;
     color: #000;
-    max-width: 300px;
+    max-width: 460px;
     z-index: 2000;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
 }
-  
+
 .static-metar-popup .metar-header {
     font-weight: bold;
-    font-size: 18px;
+    font-size: 28px;
     text-align: center;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
-  
+
+.static-metar-popup .metar-plainlanguage {
+    text-align: center;
+    font-size: 18px;
+    font-style: italic;
+    color: #444;
+    margin-bottom: 10px;
+}
+
 .static-metar-popup .metar-table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 10px;
 }
-  
+
 .static-metar-popup .metar-table td {
-    padding: 2px 6px;
+    padding: 4px 8px;
 }
-  
+
 .static-metar-popup .wind-graphic {
     margin: 5px 0;
     text-align: center;
 }
-  
+
 .static-metar-popup .rawdata {
     width: 100%;
-    height: 60px;
+    height: 50px;
     font-family: monospace;
     font-size: 12px;
     background-color: #f2f2f2;
@@ -379,22 +387,22 @@ hr {
     margin-left: 4px;
 }
 
-.metar-vfr .metar-category {
+.metar-category.vfr {
     background-color: #00ff00;
     color: black;
 }
 
-.metar-mvfr .metar-category {
+.metar-category.mvfr {
     background-color: #1e90ff;
     color: white;
 }
 
-.metar-ifr .metar-category {
+.metar-category.ifr {
     background-color: #ff0000;
     color: white;
 }
 
-.metar-lifr .metar-category {
+.metar-category.lifr {
     background-color: #f984f9;
     color: black;
 }

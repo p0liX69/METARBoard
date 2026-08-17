@@ -116,6 +116,13 @@ let settings = loadSettings();
 const FAA_AIRSPACE_URL = "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0/query";
 let homeAirspaceCache = new Map();
 
+// FAA's public TFR site (tfr.faa.gov) - list/metadata API and GeoServer WFS
+// boundary-geometry API, both public and unauthenticated.
+const FAA_TFR_LIST_URL = "https://tfr.faa.gov/tfrapi/getTfrList";
+const FAA_TFR_WFS_URL = "https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=500&outputFormat=application/json&srsname=EPSG:4326";
+const TFR_CACHE_TTL_MS = 15 * 60 * 1000;
+let tfrCache = { data: null, fetchedAt: 0 };
+
 /******************************************************
    if running in a docker container, check to see if an
    external volume for the database folder exists, if so,
@@ -472,6 +479,63 @@ try {
             console.log(`Failed to fetch FAA airspace boundary for ${icao}:`, err);
             res.writeHead(200);
             res.end(JSON.stringify(emptyCollection));
+        }
+    });
+
+    // Active FAA Temporary Flight Restrictions (nationwide - TFRs aren't
+    // specific to the home airport). FAA's tfr.faa.gov site is a public,
+    // unauthenticated Nuxt app backed by a REST API (TFR list/metadata) and
+    // a GeoServer WFS instance (boundary polygons) - there's no single feed
+    // with both, so this joins them on notam_id/NOTAM_KEY. Refetched at most
+    // every TFR_CACHE_TTL_MS, since unlike airspace boundaries these change
+    // throughout the day.
+    app.get("/tfrs", async (req, res) => {
+        const emptyCollection = { type: "FeatureCollection", features: [] };
+
+        if (tfrCache.data && Date.now() - tfrCache.fetchedAt < TFR_CACHE_TTL_MS) {
+            res.writeHead(200);
+            res.end(JSON.stringify(tfrCache.data));
+            return;
+        }
+
+        try {
+            const [listResponse, wfsResponse] = await Promise.all([
+                fetch(FAA_TFR_LIST_URL),
+                fetch(FAA_TFR_WFS_URL)
+            ]);
+            const list = await listResponse.json();
+            const wfs = await wfsResponse.json();
+
+            const listByNotamId = new Map(
+                Array.isArray(list) ? list.map((tfr) => [tfr.notam_id, tfr]) : []
+            );
+
+            const features = (wfs?.features || []).flatMap((feature) => {
+                const notamKey = feature.properties?.NOTAM_KEY || "";
+                const notamId = notamKey.split("-")[0];
+                const tfr = listByNotamId.get(notamId);
+                if (!tfr) return [];
+
+                return [{
+                    type: "Feature",
+                    geometry: feature.geometry,
+                    properties: {
+                        notam_id: notamId,
+                        type: tfr.type,
+                        description: tfr.description,
+                        state: tfr.state
+                    }
+                }];
+            });
+
+            tfrCache = { data: { type: "FeatureCollection", features }, fetchedAt: Date.now() };
+            res.writeHead(200);
+            res.end(JSON.stringify(tfrCache.data));
+        }
+        catch (err) {
+            console.log("Failed to fetch FAA TFRs:", err);
+            res.writeHead(200);
+            res.end(JSON.stringify(tfrCache.data || emptyCollection));
         }
     });
 
