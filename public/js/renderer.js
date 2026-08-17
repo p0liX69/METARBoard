@@ -1467,7 +1467,7 @@ function processTraffic() {
                 image: new ol.style.Icon({
                     src: getTrafficIconSrc(item.Icao_addr),
                     crossOrigin: 'anonymous',
-                    scale: 0.07,
+                    scale: 0.2,
                     rotation: tradians
                 })
             }));
