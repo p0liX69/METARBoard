@@ -3,6 +3,7 @@ const favicon = require('serve-favicon');
 const cors = require('cors');
 const url = require('url');
 const fs = require("fs");
+const { execFile } = require("child_process");
 const WebSocket = require('ws');
 const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const { XMLParser } = require('fast-xml-parser');
@@ -59,6 +60,11 @@ let connections = new Map();
 // versioned release directory) without touching any of it. Falls back to
 // __dirname for local dev / any install that hasn't set this env var.
 const DATA_DIR = process.env.METARBOARD_DATA_DIR || __dirname;
+
+// Must match the SSID provisioning/network-setup-check.sh creates - used
+// here only to exclude the hotspot from seeing itself in /setup/wifi-scan
+// results.
+const SETUP_HOTSPOT_SSID = "METARBoard Setup";
 
 let DB_PATH = `${DATA_DIR}/charts`;
 
@@ -373,7 +379,6 @@ try {
     app.use(express.json({}));
     app.use(cors());
     app.use(favicon(`${__dirname }/images/favicon.png`));
-    app.use(express.static('public'))
     console.log(`Server listening on port ${settings.httpport}`);
     app.listen(settings.httpport, '0.0.0.0'); 
 
@@ -393,12 +398,167 @@ try {
 
     app.use(express.static(`${__dirname}/public`, appOptions));
     
+    // provisioning/network-setup-check.sh (root, runs before this service
+    // starts) writes this flag when the device has no working network
+    // connection and has started an open setup hotspot instead. While
+    // it's present, the kiosk browser is served the setup wizard instead
+    // of the map - same port/process, no second web server.
+    const SETUP_MODE_FLAG = `${DATA_DIR}/setup-mode-active`;
+    const isSetupModeActive = () => fs.existsSync(SETUP_MODE_FLAG);
+
     app.get('/', (req, res) => {
+        if (isSetupModeActive()) {
+            res.sendFile(`${__dirname}/public/setup.html`);
+            return;
+        }
         res.sendFile(`${__dirname}/public/index.html`);
     });
 
     app.get('/admin', (req, res) => {
         res.sendFile(`${__dirname}/public/admin.html`);
+    });
+
+    // Setup-mode-only routes - 404 once setup is complete (SETUP_MODE_FLAG
+    // gone), so there's no lingering wifi-scan/connect attack surface on
+    // an already-provisioned device.
+    app.get('/setup/wifi-scan', (req, res) => {
+        if (!isSetupModeActive()) {
+            res.writeHead(404);
+            res.end();
+            return;
+        }
+
+        execFile('nmcli', ['-t', '-f', 'SSID,SECURITY,SIGNAL', 'device', 'wifi', 'list'], (err, stdout) => {
+            if (err) {
+                console.log("Failed to scan wifi networks:", err.message);
+                res.writeHead(502);
+                res.end(JSON.stringify({ error: "Failed to scan for WiFi networks" }));
+                return;
+            }
+
+            const seen = new Set();
+            const networks = stdout.trim().split("\n").flatMap((line) => {
+                const [ssid, security, signal] = line.split(":");
+                if (!ssid || ssid === SETUP_HOTSPOT_SSID || seen.has(ssid)) return [];
+                seen.add(ssid);
+                return [{ ssid, secured: security !== "--" && security !== "", signal: Number(signal) || 0 }];
+            }).sort((a, b) => b.signal - a.signal);
+
+            res.writeHead(200);
+            res.end(JSON.stringify(networks));
+        });
+    });
+
+    const SETUP_STATUS_FILE = `${DATA_DIR}/setup-attempt-status.json`;
+
+    function writeSetupStatus(state, message) {
+        try {
+            const tmp = `${SETUP_STATUS_FILE}.tmp`;
+            fs.writeFileSync(tmp, JSON.stringify({ state, message, at: new Date().toISOString() }));
+            fs.renameSync(tmp, SETUP_STATUS_FILE);
+        }
+        catch (err) {
+            console.log("Failed to write setup status:", err.message);
+        }
+    }
+
+    // Polled by public/setup.html - both the phone that submitted the
+    // form (after it reconnects to the still-alive hotspot, if the
+    // attempt failed) and the kiosk's own copy of the page (waiting to
+    // reload once it sees "success").
+    app.get('/setup/status', (req, res) => {
+        // Read into a local var before writing any headers - writeHead()
+        // was previously called before this read, so a mid-poll race with
+        // writeSetupStatus() rewriting the file could throw here *after*
+        // headers were already sent, hitting ERR_HTTP_HEADERS_SENT in the
+        // catch block below (confirmed live on the setup wizard).
+        let body;
+        try {
+            body = fs.readFileSync(SETUP_STATUS_FILE);
+        }
+        catch (err) {
+            body = JSON.stringify({ state: "idle" });
+        }
+        res.writeHead(200);
+        res.end(body);
+    });
+
+    app.post('/setup/complete', (req, res) => {
+        if (!isSetupModeActive()) {
+            res.writeHead(404);
+            res.end();
+            return;
+        }
+
+        const ssid = String(req.body?.ssid || "").trim();
+        const password = String(req.body?.password || "");
+        const homeAirport = SETTINGS_VALIDATORS.homeAirport(req.body?.homeAirport);
+        const timezone = SETTINGS_VALIDATORS.timezone(req.body?.timezone);
+
+        if (!ssid) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "A WiFi network is required" }));
+            return;
+        }
+        if (!homeAirport) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "Home airport must be a 3-4 character ICAO/FAA code" }));
+            return;
+        }
+
+        // Respond BEFORE touching the network - connecting to a new WiFi
+        // network requires freeing wlan0 from the setup hotspot first
+        // (confirmed live: a device actively running an open AP can't
+        // scan for other networks at all, so attempting to connect
+        // without doing this first reliably fails with "No network with
+        // SSID found" - not a password problem, but this response's own
+        // transport is the hotspot link the caller is currently on, so
+        // this has to go out first, before that link gets torn down.
+        writeSetupStatus("connecting", "Connecting - this will disconnect you from the Setup network");
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true, connecting: true }));
+
+        execFile('nmcli', ['connection', 'down', SETUP_HOTSPOT_SSID], () => {
+            // Delete any existing profile for this SSID first - confirmed
+            // live that a stale/partial profile (e.g. one NetworkManager
+            // auto-creates on its own when it sees a known SSID, or a
+            // leftover from an earlier failed attempt) can get reused
+            // instead of a fresh one built from the password just
+            // submitted, failing with a confusing "key-mgmt property is
+            // missing" error that has nothing to do with the real
+            // password. Ignoring the error here - it's expected to fail
+            // when no such profile exists yet.
+            execFile('nmcli', ['connection', 'delete', ssid], () => {
+                const connectArgs = ["device", "wifi", "connect", ssid];
+                if (password) connectArgs.push("password", password);
+
+                execFile('nmcli', connectArgs, { timeout: 45000 }, (err, stdout, stderr) => {
+                    if (err) {
+                        const reason = (stderr || err.message || "").trim();
+                        console.log("Failed to connect to wifi:", reason);
+                        writeSetupStatus("failed", reason || "Could not connect - check the password and try again");
+                        execFile('nmcli', ['connection', 'up', SETUP_HOTSPOT_SSID], (hotspotErr) => {
+                            if (hotspotErr) console.log("Failed to restore setup hotspot:", hotspotErr.message);
+                        });
+                        return;
+                    }
+
+                    const currentSettings = loadSettings();
+                    const newSettings = { ...currentSettings, homeAirport };
+                    if (timezone) newSettings.timezone = timezone;
+                    writeSettings(newSettings);
+
+                    try {
+                        fs.unlinkSync(SETUP_MODE_FLAG);
+                    }
+                    catch (unlinkErr) {
+                        console.log("Failed to clear setup-mode flag:", unlinkErr.message);
+                    }
+
+                    writeSetupStatus("success", `Connected to ${ssid}`);
+                });
+            });
+        });
     });
 
     // Used by the OTA updater (provisioning/check-for-update.sh) to decide

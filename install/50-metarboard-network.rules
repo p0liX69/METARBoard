@@ -1,0 +1,45 @@
+// Lets the unprivileged, headless `metarboard` service user scan for and
+// connect to WiFi networks during first-boot setup (server.js's
+// /setup/wifi-scan and /setup/complete routes) without an interactive
+// polkit auth prompt - which is impossible anyway, since this user has
+// no login session for an authentication agent to attach to.
+//
+// nmcli itself never needs elevated privileges for this - it talks to
+// the NetworkManager daemon (already running as root) over D-Bus, and
+// polkit is what authorizes *that* daemon to act on the request. This is
+// why metarboard.service can keep NoNewPrivileges=yes (sudo would be
+// blocked by that flag; this isn't sudo) while still allowing exactly
+// these actions, nothing else.
+//
+// wifi.share.open/wifi.share.protected are needed separately from
+// network-control - confirmed live that restoring the setup hotspot
+// (an ipv4.method=shared AP connection) after a failed connection
+// attempt fails with "Not authorized to share connections via wifi"
+// without these, even though plain client connects work fine under
+// network-control alone.
+//
+// settings.modify.system is needed to delete/replace a saved connection
+// profile - confirmed live that "nmcli connection delete" (used to clear
+// a stale/broken profile before reconnecting - see /setup/complete)
+// fails with "Insufficient privileges" without this, even with
+// network-control already granted.
+//
+// (All three of the above were only found by testing as the actual
+// metarboard user via `sudo -u metarboard nmcli ...` - testing the same
+// commands as plain root, e.g. bare `sudo nmcli ...`, bypasses polkit's
+// per-user checks entirely and will look fine even when the real
+// unprivileged path is broken.)
+//
+// Installed by setup-pi.sh to /etc/polkit-1/rules.d/50-metarboard-network.rules
+polkit.addRule(function(action, subject) {
+    var allowedActions = [
+        "org.freedesktop.NetworkManager.wifi.scan",
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.wifi.share.open",
+        "org.freedesktop.NetworkManager.wifi.share.protected",
+        "org.freedesktop.NetworkManager.settings.modify.system"
+    ];
+    if (allowedActions.indexOf(action.id) !== -1 && subject.user == "metarboard") {
+        return polkit.Result.YES;
+    }
+});

@@ -206,6 +206,41 @@ Current version and last update result are shown at the top of `/admin`.
 Devices pick it up on their next scheduled check, or immediately via
 `sudo /opt/metarboard/provisioning/check-for-update.sh`.
 
+## 10. Shipping to a customer (zero-SSH first-boot setup)
+
+Steps 1-9 above are what *you* do once, ahead of time, to build a
+device's SD card image (or a golden image you clone onto many). None of
+it requires the customer to touch a command line - here's what happens
+when they actually power the device on for the first time, with no WiFi
+credentials on it yet:
+
+1. `metarboard-network-setup.service` (runs automatically at boot, before
+   the main app) detects there's no working network connection and
+   starts an **open** WiFi hotspot named `METARBoard Setup`.
+2. The kiosk display itself shows the setup wizard (same port, same
+   Chromium session - nothing extra to configure) - but the customer
+   doesn't need to look at the TV at all. They connect their **phone or
+   laptop** to the `METARBoard Setup` network, open a browser, and go to
+   `http://10.42.0.1:8500` (NetworkManager's default gateway address for
+   a shared/hotspot connection - confirm this is actually what's assigned
+   when testing on real hardware, since this is customer-facing and
+   worth getting exactly right).
+3. The wizard lists nearby WiFi networks, lets them pick one and enter
+   its password (if secured), and set their home airport + timezone.
+4. On submit, the device connects to that network, saves the settings,
+   and the kiosk display reloads into the normal map view - no reboot,
+   no SSH, no command line.
+
+If setup is interrupted (power loss, walked away) the hotspot just stays
+up - the device is never fully unreachable, and the customer can
+reconnect and finish later. A device physically moved to a different
+WiFi network later will drop back into setup mode on its own the next
+time it can't connect, for the same reason.
+
+**Testing this yourself:** `sudo nmcli connection delete <your-wifi-profile-name>`
+on a provisioned Pi and reboot it to simulate a customer's out-of-the-box
+first boot.
+
 ## Re-provisioning / updating an existing Pi
 
 Re-running `sudo ./provisioning/setup-pi.sh` from an updated checkout will

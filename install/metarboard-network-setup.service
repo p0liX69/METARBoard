@@ -1,0 +1,13 @@
+[Unit]
+Description=METARBoard first-boot network setup check
+After=NetworkManager-wait-online.service
+Wants=NetworkManager-wait-online.service
+Before=metarboard.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/metarboard/provisioning/network-setup-check.sh
+
+[Install]
+WantedBy=multi-user.target

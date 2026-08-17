@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>METAR Board - Setup</title>
+  <link rel="icon" type="image/x-icon" href="img/favicon.png"/>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 480px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    h1 {
+      font-size: 22px;
+    }
+    p.intro {
+      color: #555;
+    }
+    label {
+      display: block;
+      margin-top: 20px;
+      font-weight: bold;
+    }
+    input[type="text"],
+    input[type="password"],
+    select {
+      font-size: 18px;
+      padding: 6px;
+      width: 100%;
+      max-width: 280px;
+      margin-top: 6px;
+      box-sizing: border-box;
+    }
+    #networkList {
+      margin-top: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .network-row {
+      padding: 10px 14px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+    }
+    .network-row:last-child {
+      border-bottom: none;
+    }
+    .network-row:hover {
+      background: #f2f2f2;
+    }
+    .network-row.selected {
+      background: #dbeeff;
+      font-weight: bold;
+    }
+    .network-signal {
+      color: #888;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 28px;
+      font-size: 18px;
+      padding: 10px 24px;
+    }
+    #rescanBtn {
+      margin-top: 8px;
+      font-size: 14px;
+      padding: 4px 12px;
+    }
+    #status {
+      margin-top: 16px;
+      font-weight: bold;
+    }
+    #status.error {
+      color: #b00020;
+    }
+    #status.success {
+      color: #1a7f37;
+    }
+  </style>
+</head>
+<body>
+  <h1>METAR Board Setup</h1>
+  <p class="intro">Connect this display to your WiFi network to finish setup.</p>
+
+  <label>WiFi Network</label>
+  <div id="networkList">Scanning...</div>
+  <button id="rescanBtn" type="button">Rescan</button>
+
+  <div id="passwordField" style="display: none;">
+    <label for="wifiPassword">Password</label>
+    <input type="password" id="wifiPassword" placeholder="WiFi password">
+  </div>
+
+  <label for="homeAirport">Home Airport</label>
+  <input type="text" id="homeAirport" placeholder="e.g. KFDK">
+
+  <label for="timezone">Timezone</label>
+  <select id="timezone">
+    <option value="America/New_York">Eastern</option>
+    <option value="America/Chicago">Central</option>
+    <option value="America/Denver">Mountain</option>
+    <option value="America/Phoenix">Mountain (Arizona, no DST)</option>
+    <option value="America/Los_Angeles">Pacific</option>
+    <option value="America/Anchorage">Alaska</option>
+    <option value="Pacific/Honolulu">Hawaii</option>
+    <option value="UTC">UTC</option>
+  </select>
+
+  <button id="connectBtn">Connect</button>
+  <div id="status"></div>
+
+  <script>
+    const networkListEl = document.getElementById("networkList");
+    const rescanBtn = document.getElementById("rescanBtn");
+    const passwordFieldEl = document.getElementById("passwordField");
+    const wifiPasswordInput = document.getElementById("wifiPassword");
+    const homeAirportInput = document.getElementById("homeAirport");
+    const timezoneSelect = document.getElementById("timezone");
+    const connectBtn = document.getElementById("connectBtn");
+    const statusEl = document.getElementById("status");
+
+    let selectedNetwork = null;
+
+    function setStatus(message, isError) {
+      statusEl.textContent = message;
+      statusEl.className = isError ? "error" : "success";
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderNetworks(networks) {
+      if (!networks.length) {
+        networkListEl.innerHTML = "<div class='network-row'>No networks found</div>";
+        return;
+      }
+      networkListEl.innerHTML = networks.map((net) => `
+        <div class="network-row" data-ssid="${escapeHtml(net.ssid)}" data-secured="${net.secured}">
+          <span>${net.secured ? "\u{1F512} " : ""}${escapeHtml(net.ssid)}</span>
+          <span class="network-signal">${net.signal}%</span>
+        </div>
+      `).join("");
+
+      networkListEl.querySelectorAll(".network-row").forEach((row) => {
+        row.addEventListener("click", () => {
+          networkListEl.querySelectorAll(".network-row").forEach((r) => r.classList.remove("selected"));
+          row.classList.add("selected");
+          selectedNetwork = { ssid: row.dataset.ssid, secured: row.dataset.secured === "true" };
+          passwordFieldEl.style.display = selectedNetwork.secured ? "block" : "none";
+        });
+      });
+    }
+
+    function scanNetworks() {
+      networkListEl.textContent = "Scanning...";
+      fetch("/setup/wifi-scan")
+        .then((res) => res.json())
+        .then(renderNetworks)
+        .catch(() => { networkListEl.textContent = "Failed to scan - try Rescan"; });
+    }
+
+    rescanBtn.addEventListener("click", scanNetworks);
+    scanNetworks();
+
+    let statusPollTimer = null;
+
+    function stopStatusPolling() {
+      if (statusPollTimer) clearInterval(statusPollTimer);
+      statusPollTimer = null;
+    }
+
+    function pollStatus() {
+      fetch("/setup/status")
+        .then((res) => res.json())
+        .then((status) => {
+          if (status.state === "success") {
+            stopStatusPolling();
+            setStatus("Connected! Loading your display...", false);
+            setTimeout(() => location.reload(), 2000);
+          }
+          else if (status.state === "failed") {
+            stopStatusPolling();
+            connectBtn.disabled = false;
+            setStatus(status.message || "Could not connect - try again.", true);
+          }
+          // state "connecting" or "idle": keep polling silently.
+        })
+        .catch(() => {
+          // Expected while disconnected mid-transition (either from this
+          // phone losing the hotspot link, or simply not reconnected to
+          // it yet) - just keep trying.
+        });
+    }
+
+    // Covers reloading this page after reconnecting to the hotspot
+    // following an earlier failed attempt.
+    pollStatus();
+
+    connectBtn.addEventListener("click", () => {
+      if (!selectedNetwork) {
+        setStatus("Choose a WiFi network first.", true);
+        return;
+      }
+      const icao = homeAirportInput.value.trim().toUpperCase();
+      if (!/^[A-Z0-9]{3,4}$/.test(icao)) {
+        setStatus("Home airport must be a 3-4 character ICAO/FAA code.", true);
+        return;
+      }
+
+      connectBtn.disabled = true;
+      setStatus("Connecting - you may lose this page as the display switches networks. If it doesn't come back, reconnect to “METARBoard Setup” and reload.", false);
+
+      fetch("/setup/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ssid: selectedNetwork.ssid,
+          password: selectedNetwork.secured ? wifiPasswordInput.value : "",
+          homeAirport: icao,
+          timezone: timezoneSelect.value
+        })
+      })
+        .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+          if (!ok) throw new Error(body.error || "Setup failed");
+          statusPollTimer = setInterval(pollStatus, 3000);
+        })
+        .catch((err) => {
+          connectBtn.disabled = false;
+          setStatus(err.message, true);
+        });
+    });
+  </script>
+</body>
+</html>

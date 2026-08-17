@@ -1,6 +1,6 @@
 [Unit]
 Description=METARBoard aviation weather/chart display server
-After=network-online.target
+After=network-online.target metarboard-network-setup.service
 Wants=network-online.target
 StartLimitIntervalSec=60
 StartLimitBurst=5

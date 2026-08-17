@@ -100,14 +100,20 @@ if [[ ! -f "${DATA_DIR}/CURRENT_VERSION" ]]; then
     echo -n "${VERSION}" > "${DATA_DIR}/CURRENT_VERSION"
 fi
 
+echo "==> Installing the first-boot network setup polkit rule"
+cp "${REPO_ROOT}/install/50-metarboard-network.rules" /etc/polkit-1/rules.d/50-metarboard-network.rules
+systemctl restart polkit
+
 echo "==> Installing systemd services + journald size cap"
 cp "${REPO_ROOT}/install/metarboard.service" /etc/systemd/system/metarboard.service
 cp "${REPO_ROOT}/install/metarboard-update.service" /etc/systemd/system/metarboard-update.service
 cp "${REPO_ROOT}/install/metarboard-update.timer" /etc/systemd/system/metarboard-update.timer
+cp "${REPO_ROOT}/install/metarboard-network-setup.service" /etc/systemd/system/metarboard-network-setup.service
 mkdir -p /etc/systemd/journald.conf.d
 cp "${REPO_ROOT}/install/journald-size-cap.conf" /etc/systemd/journald.conf.d/metarboard-size-cap.conf
 systemctl restart systemd-journald
 systemctl daemon-reload
+systemctl enable --now metarboard-network-setup
 systemctl enable --now metarboard
 systemctl enable --now metarboard-update.timer
 
