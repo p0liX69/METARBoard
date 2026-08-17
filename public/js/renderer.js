@@ -1496,9 +1496,17 @@ function processTraffic() {
                     geometry: new ol.geom.LineString([coord, endCoord]),
                     datatype: "traffic-vector"
                 });
-                vectorFeature.setStyle(new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: '#ffcc00', width: 2 })
-                }));
+                vectorFeature.setStyle([
+                    // Black outline first so the line reads against yellow
+                    // chart symbols/airport markers, same treatment as the
+                    // icon halo.
+                    new ol.style.Style({
+                        stroke: new ol.style.Stroke({ color: '#000000', width: 4 })
+                    }),
+                    new ol.style.Style({
+                        stroke: new ol.style.Stroke({ color: '#ffcc00', width: 2 })
+                    })
+                ]);
                 trafficFeatures.push(vectorFeature);
             }
         }
