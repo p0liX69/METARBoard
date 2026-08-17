@@ -317,7 +317,11 @@ try {
             return /^[A-Z0-9]{3,4}$/.test(icao) ? icao : undefined;
         },
         showRadarByDefault: (value) => (typeof value === "boolean" ? value : undefined),
-        useOSMonlinemap: (value) => (typeof value === "boolean" ? value : undefined)
+        useOSMonlinemap: (value) => (typeof value === "boolean" ? value : undefined),
+        startupzoom: (value) => {
+            const zoom = Number(value);
+            return Number.isInteger(zoom) && zoom >= 1 && zoom <= 20 ? zoom : undefined;
+        }
     };
 
     app.post("/savesettings", (req, res) => {
