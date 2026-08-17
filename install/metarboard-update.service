@@ -1,0 +1,9 @@
+[Unit]
+Description=METARBoard OTA update check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/metarboard/provisioning/check-for-update.sh

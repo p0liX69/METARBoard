@@ -11,7 +11,8 @@ User=metarboard
 Group=metarboard
 WorkingDirectory=/opt/metarboard
 ExecStart=/usr/bin/node /opt/metarboard/server.js
-EnvironmentFile=-/opt/metarboard/.env
+Environment=METARBOARD_DATA_DIR=/opt/metarboard-data
+EnvironmentFile=-/opt/metarboard-data/.env
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=yes

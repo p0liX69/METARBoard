@@ -53,20 +53,22 @@ and it skips steps that are already done (Node install, user creation).
 
 **`charts/*.mbtiles` are not in this git repo** — they're several GB each
 (8+ GB total across all regions) and are deliberately `.gitignore`d, so step
-3/4 above will leave `/opt/metarboard/charts` empty. Copy them separately
+3/4 above will leave `/opt/metarboard-data/charts` empty. Copy them separately
 from wherever you keep them (e.g. a dev machine that already has this repo
-checked out with its charts), directly into the install directory:
+checked out with its charts), directly into the persistent data directory
+(not `/opt/metarboard` — that's a symlink to the current release and gets
+replaced by every update):
 
 ```bash
 # run from the machine that HAS the charts, not from the Pi
-rsync -avz --progress ~/GitHub/METARBoard/charts/ pi@<pi-ip>:/opt/metarboard/charts/
+rsync -avz --progress ~/GitHub/METARBoard/charts/ pi@<pi-ip>:/opt/metarboard-data/charts/
 ```
 
 Then fix ownership and restart so the server picks them up (chart databases
 are loaded once at startup):
 
 ```bash
-ssh pi@<pi-ip> 'sudo chown -R metarboard:metarboard /opt/metarboard/charts && sudo systemctl restart metarboard'
+ssh pi@<pi-ip> 'sudo chown -R metarboard:metarboard /opt/metarboard-data/charts && sudo systemctl restart metarboard'
 ```
 
 Re-running `setup-pi.sh` later will not touch or delete this directory.
@@ -88,11 +90,12 @@ node provisioning/import-aircraft-db.js /tmp/aircraft-database-complete.csv
 ```
 
 This produces `aircraft.db` (~40MB) in the repo root — not checked into
-git (same reasoning as `charts/*.mbtiles`). Copy it to the Pi and restart:
+git (same reasoning as `charts/*.mbtiles`). Copy it to the Pi's persistent
+data directory and restart:
 
 ```bash
-rsync -avz aircraft.db pi@<pi-ip>:/opt/metarboard/aircraft.db
-ssh pi@<pi-ip> 'sudo chown metarboard:metarboard /opt/metarboard/aircraft.db && sudo systemctl restart metarboard'
+rsync -avz aircraft.db pi@<pi-ip>:/opt/metarboard-data/aircraft.db
+ssh pi@<pi-ip> 'sudo chown metarboard:metarboard /opt/metarboard-data/aircraft.db && sudo systemctl restart metarboard'
 ```
 
 The server logs "Aircraft database not loaded" at startup and the
@@ -125,7 +128,7 @@ within a second or two — no need to touch the appliance.
 
 There's no auth on this page (by design, for LAN-only appliance use) — don't
 expose port 8500 to the open internet. For settings not covered by the admin
-page (Stratux IP, ports, etc.), edit `/opt/metarboard/settings.json` directly
+page (Stratux IP, ports, etc.), edit `/opt/metarboard-data/settings.json` directly
 and `sudo systemctl restart metarboard`.
 
 ## 8. Kiosk display (no keyboard/mouse)
@@ -157,6 +160,52 @@ screen/TV. If it doesn't come up fullscreen on its own, check
 `~/.config/labwc/autostart` is still in place and that autologin is
 actually enabled (`raspi-config` → System Options → Boot / Auto Login).
 
+## 9. OTA updates
+
+Every device checks for updates on its own (a systemd timer, once a day
+with up to an hour of random jitter) and installs them automatically -
+no SSH access to the field device required.
+
+**How it works:** devices poll a separate **public** GitHub repo
+(`METARBoard-releases`, set via `METARBOARD_RELEASES_REPO` if you name it
+differently) that holds nothing but tagged Releases - two assets per
+release, a tarball and a [minisign](https://jedisct1.github.io/minisign/)
+signature over it. No GitHub auth is needed anywhere in this flow. The
+private dev repo (this one) is never touched by any device. Once a
+signature check passes, `provisioning/check-for-update.sh` extracts the
+release into a new `/opt/metarboard-releases/vX.Y.Z/` directory, runs
+`npm ci` there, atomically re-points the `/opt/metarboard` symlink at it,
+restarts the service, and health-checks it (`GET /health`) - if that
+fails, it rolls the symlink back to the previous release automatically.
+`settings.json`, `charts/`, `aircraft.db`, and `.env` all live in
+`/opt/metarboard-data/`, untouched by any of this.
+
+Current version and last update result are shown at the top of `/admin`.
+
+**One-time setup, before cutting your first release:**
+
+1. Create a **public** repo named `METARBoard-releases` on GitHub - it
+   should stay empty except for Releases you publish to it.
+2. Generate a signing keypair: `minisign -G`. Keep the private key
+   (`~/.minisign/minisign.key`) and its password safe - ideally not on a
+   machine/session that also has push access to GitHub, so a compromised
+   GitHub login alone can't produce a validly-signed malicious release.
+3. Replace `provisioning/metarboard-release.pub` in this repo with your
+   real public key (the placeholder committed here is for pipeline
+   testing only, not a real trust anchor) and re-provision any devices
+   that were set up before you did this, so they pick up the real key.
+
+**Cutting a release** (from a machine with `gh` authenticated and
+`minisign` installed):
+
+```bash
+# bump "version" in package.json first
+./provisioning/build-release.sh
+```
+
+Devices pick it up on their next scheduled check, or immediately via
+`sudo /opt/metarboard/provisioning/check-for-update.sh`.
+
 ## Re-provisioning / updating an existing Pi
 
 Re-running `sudo ./provisioning/setup-pi.sh` from an updated checkout will
@@ -175,7 +224,13 @@ chart/position-history databases already on the device.
 - **Charts not showing / `databaselist` returns `[]`:** you likely haven't
   done step 5 yet (`charts/*.mbtiles` are not in git). Confirm the files
   exist and are readable by the `metarboard` user
-  (`ls -la /opt/metarboard/charts`), then restart the service.
+  (`ls -la /opt/metarboard-data/charts`), then restart the service.
+- **Update didn't apply / device stuck on an old version:** check
+  `/admin`'s device status line, or `journalctl -u metarboard-update -n
+  50` for the actual failure. A failed signature check, disk-space
+  preflight, or `npm ci` all abort cleanly and leave the previous release
+  running untouched - it'll retry on the next scheduled check. A failed
+  post-update health check rolls back automatically and logs why.
 - **Wrong chart region showing, or none at all:** there's no manual chart
   picker on the display anymore — the app always shows the single regional
   chart whose center is geographically closest to the home airport set in

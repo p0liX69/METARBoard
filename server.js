@@ -52,7 +52,15 @@ let MessageTypes = {};
 
 let wss;
 let connections = new Map();
-let DB_PATH = `${__dirname}/charts`;
+
+// Device-specific/mutable data (settings.json, charts/, aircraft.db,
+// position history, .env) lives here instead of alongside the app code,
+// so an OTA update can wholesale-replace __dirname's contents (a new
+// versioned release directory) without touching any of it. Falls back to
+// __dirname for local dev / any install that hasn't set this env var.
+const DATA_DIR = process.env.METARBOARD_DATA_DIR || __dirname;
+
+let DB_PATH = `${DATA_DIR}/charts`;
 
 /**
  * Load settings.json, falling back to settings.default.json, and finally to
@@ -82,7 +90,7 @@ const BUILTIN_SETTINGS = {
 
 function loadSettings() {
     try {
-        return JSON.parse(fs.readFileSync(`${__dirname}/settings.json`));
+        return JSON.parse(fs.readFileSync(`${DATA_DIR}/settings.json`));
     }
     catch (err) {
         console.log(`WARNING: failed to load settings.json: ${err.message}`);
@@ -103,7 +111,7 @@ function loadSettings() {
  * the real file) so a power loss mid-write can't leave it corrupted.
  */
 function writeSettings(newSettings) {
-    let target = `${__dirname}/settings.json`;
+    let target = `${DATA_DIR}/settings.json`;
     let tmp = `${target}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(newSettings, null, "    "));
     fs.renameSync(tmp, target);
@@ -154,8 +162,8 @@ async function hasInternetAccess() {
 }
 
 if (isRunningInDocker()) {
-    if (fs.existsSync(`${__dirname}/externalcharts`)) {
-        DB_PATH = `${__dirname}/externalcharts`;
+    if (fs.existsSync(`${DATA_DIR}/externalcharts`)) {
+        DB_PATH = `${DATA_DIR}/externalcharts`;
     }
 }
 else {
@@ -252,7 +260,7 @@ function loadDatabases() {
     });
 
     try {
-        histdb = new Database(`${__dirname}/${settings.historyDb}`);
+        histdb = new Database(`${DATA_DIR}/${settings.historyDb}`);
     }
     catch (err) {
         console.log(`Failed to load: ${settings.historyDb}: ${err.message}`);
@@ -262,7 +270,7 @@ function loadDatabases() {
     // been run manually. Traffic metadata lookups just come back empty
     // without it - not a startup requirement.
     try {
-        aircraftDb = new Database(`${__dirname}/aircraft.db`, { fileMustExist: true });
+        aircraftDb = new Database(`${DATA_DIR}/aircraft.db`, { fileMustExist: true });
     }
     catch (err) {
         console.log(`Aircraft database not loaded (run provisioning/import-aircraft-db.js to enable it): ${err.message}`);
@@ -306,8 +314,51 @@ try {
         res.sendFile(`${__dirname}/public/admin.html`);
     });
 
+    // Used by the OTA updater (provisioning/check-for-update.sh) to decide
+    // whether a freshly-swapped-in release actually works before keeping
+    // it - a syntax error or crash on startup means this route (and
+    // everything else) never responds at all, which the updater's retry
+    // loop already treats as unhealthy. The one thing worth asserting
+    // explicitly here is that settings.json actually parses, since a
+    // release could otherwise "start" against a corrupt settings file and
+    // still look alive. Chart/aircraft DB status is reported but doesn't
+    // affect the health verdict - both are legitimately optional.
+    app.get("/health", (req, res) => {
+        let settingsLoaded = false;
+        try {
+            JSON.parse(fs.readFileSync(`${DATA_DIR}/settings.json`));
+            settingsLoaded = true;
+        }
+        catch (err) {
+            settingsLoaded = false;
+        }
+
+        res.writeHead(settingsLoaded ? 200 : 500);
+        res.end(JSON.stringify({
+            status: settingsLoaded ? "ok" : "unhealthy",
+            settingsLoaded,
+            chartsLoaded: databaselist.size > 0,
+            historyDbOpen: !!(histdb && histdb.open),
+            aircraftDbOpen: !!(aircraftDb && aircraftDb.open)
+        }));
+    });
+
+    // Last OTA update check/result, written by check-for-update.sh, so
+    // Todd (or a customer) can see fleet health from /admin without SSH.
+    app.get("/updatestatus", (req, res) => {
+        try {
+            const rawdata = fs.readFileSync(`${DATA_DIR}/update-status.json`);
+            res.writeHead(200);
+            res.end(rawdata);
+        }
+        catch (err) {
+            res.writeHead(200);
+            res.end(JSON.stringify({ status: "unknown", message: "No update check has run yet" }));
+        }
+    });
+
     app.get("/getsettings", (req, res) => {
-    let rawdata = fs.readFileSync(`${__dirname}/settings.json`);
+    let rawdata = fs.readFileSync(`${DATA_DIR}/settings.json`);
     let json = JSON.parse(rawdata);
 
     res.writeHead(200);

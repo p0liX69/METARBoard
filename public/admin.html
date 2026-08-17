@@ -60,11 +60,21 @@
     #status.success {
       color: #1a7f37;
     }
+    #deviceStatus {
+      font-size: 13px;
+      color: #666;
+      background: #f2f2f2;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
   <h1>METAR Board Admin</h1>
   <p>Changes here are pushed to the display immediately - it will refresh on its own.</p>
+
+  <div id="deviceStatus">Loading device status...</div>
 
   <label for="homeAirport">Home Airport</label>
   <input type="text" id="homeAirport" placeholder="e.g. KFDK">
@@ -110,6 +120,16 @@
       statusEl.textContent = message;
       statusEl.className = isError ? "error" : "success";
     }
+
+    fetch("/updatestatus")
+      .then(res => res.json())
+      .then(update => {
+        const deviceStatusEl = document.getElementById("deviceStatus");
+        const version = update.version || "unknown";
+        const when = update.checkedAt ? new Date(update.checkedAt).toLocaleString() : "never";
+        deviceStatusEl.textContent = `Version ${version} - last update check: ${update.status} (${when})`;
+      })
+      .catch(() => {});
 
     fetch("/getsettings")
       .then(res => res.json())

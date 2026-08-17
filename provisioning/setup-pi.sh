@@ -8,13 +8,24 @@ set -euo pipefail
 #   cd ~/METARBoard
 #   sudo ./provisioning/setup-pi.sh
 #
-# Installs Node.js, a dedicated unprivileged system user, the app itself
-# (copied to /opt/metarboard), and the systemd service, then starts
-# METARBoard. Safe to re-run - existing settings.json and node_modules
-# are left alone.
+# Installs Node.js, a dedicated unprivileged system user, the app itself,
+# and the systemd service, then starts METARBoard. Also lays out the
+# structure the OTA updater (provisioning/check-for-update.sh) depends on
+# going forward:
+#   /opt/metarboard          - symlink to the currently-active release
+#   /opt/metarboard-releases - versioned release directories + the
+#                              release-signing public key (never touched
+#                              by an update itself)
+#   /opt/metarboard-data     - settings.json/charts/aircraft.db/.env/
+#                              position history - survives every update
+#
+# Safe to re-run - existing settings.json, charts, and node_modules are
+# left alone.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_DIR="/opt/metarboard"
+RELEASES_DIR="/opt/metarboard-releases"
+DATA_DIR="/opt/metarboard-data"
 SERVICE_USER="metarboard"
 DESKTOP_USER="pi"
 NODE_MAJOR="22"
@@ -34,9 +45,9 @@ if [[ "${REPO_ROOT}" == "${INSTALL_DIR}" ]]; then
     exit 1
 fi
 
-echo "==> Installing rsync/curl (if missing)"
+echo "==> Installing rsync/curl/jq/minisign (if missing)"
 apt-get update -y
-apt-get install -y rsync curl
+apt-get install -y rsync curl jq minisign
 
 echo "==> Installing Node.js ${NODE_MAJOR}.x (if not already present)"
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | sed 's/^v//;s/\..*//')" -lt "${NODE_MAJOR}" ]]; then
@@ -48,42 +59,57 @@ fi
 
 echo "==> Creating system user '${SERVICE_USER}' (if needed)"
 if ! id "${SERVICE_USER}" >/dev/null 2>&1; then
-    useradd --system --create-home --home-dir "${INSTALL_DIR}" --shell /usr/sbin/nologin "${SERVICE_USER}"
+    useradd --system --shell /usr/sbin/nologin "${SERVICE_USER}"
 else
     echo "    user already exists, skipping"
 fi
 
-echo "==> Copying app to ${INSTALL_DIR}"
-mkdir -p "${INSTALL_DIR}"
-# charts/ is intentionally excluded: .mbtiles files are too large for git
-# (see provisioning/README.md for how to get them onto the device) and must
-# never be touched by --delete here, or a re-provision would wipe them out.
+echo "==> Setting up persistent data directory (${DATA_DIR})"
+mkdir -p "${DATA_DIR}/charts"
+if [[ ! -f "${DATA_DIR}/settings.json" ]]; then
+    cp "${REPO_ROOT}/settings.default.json" "${DATA_DIR}/settings.json"
+fi
+
+echo "==> Installing the release-signing public key"
+mkdir -p "${RELEASES_DIR}"
+# Deliberately installed here, not inside a versioned release dir - this
+# must never be replaced by the update process itself, or a malicious
+# release could ship its own "public key" and self-validate.
+cp "${REPO_ROOT}/provisioning/metarboard-release.pub" "${RELEASES_DIR}/metarboard-release.pub"
+
+VERSION="v$(node -p "require('${REPO_ROOT}/package.json').version")"
+LOCAL_RELEASE_DIR="${RELEASES_DIR}/${VERSION}-local"
+echo "==> Copying app to ${LOCAL_RELEASE_DIR}"
+mkdir -p "${LOCAL_RELEASE_DIR}"
 rsync -a --delete \
     --exclude 'node_modules' \
     --exclude '.git' \
     --exclude 'settings.json' \
     --exclude 'charts' \
-    "${REPO_ROOT}/" "${INSTALL_DIR}/"
-mkdir -p "${INSTALL_DIR}/charts"
-
-echo "==> Seeding settings.json from settings.default.json (only if missing)"
-if [[ ! -f "${INSTALL_DIR}/settings.json" ]]; then
-    cp "${INSTALL_DIR}/settings.default.json" "${INSTALL_DIR}/settings.json"
-fi
+    "${REPO_ROOT}/" "${LOCAL_RELEASE_DIR}/"
 
 echo "==> Installing npm dependencies (production only)"
-(cd "${INSTALL_DIR}" && npm ci --omit=dev)
+(cd "${LOCAL_RELEASE_DIR}" && npm ci --omit=dev)
 
 echo "==> Fixing ownership"
-chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${LOCAL_RELEASE_DIR}" "${DATA_DIR}"
 
-echo "==> Installing systemd service + journald size cap"
+echo "==> Pointing ${INSTALL_DIR} at ${LOCAL_RELEASE_DIR}"
+ln -sfn "${LOCAL_RELEASE_DIR}" "${INSTALL_DIR}"
+if [[ ! -f "${DATA_DIR}/CURRENT_VERSION" ]]; then
+    echo -n "${VERSION}" > "${DATA_DIR}/CURRENT_VERSION"
+fi
+
+echo "==> Installing systemd services + journald size cap"
 cp "${REPO_ROOT}/install/metarboard.service" /etc/systemd/system/metarboard.service
+cp "${REPO_ROOT}/install/metarboard-update.service" /etc/systemd/system/metarboard-update.service
+cp "${REPO_ROOT}/install/metarboard-update.timer" /etc/systemd/system/metarboard-update.timer
 mkdir -p /etc/systemd/journald.conf.d
 cp "${REPO_ROOT}/install/journald-size-cap.conf" /etc/systemd/journald.conf.d/metarboard-size-cap.conf
 systemctl restart systemd-journald
 systemctl daemon-reload
 systemctl enable --now metarboard
+systemctl enable --now metarboard-update.timer
 
 echo "==> Configuring kiosk auto-start for desktop user '${DESKTOP_USER}' (if present)"
 if id "${DESKTOP_USER}" >/dev/null 2>&1 && [[ -x /usr/bin/chromium ]]; then
