@@ -81,6 +81,9 @@
   <label for="homeAirport">Home Airport</label>
   <input type="text" id="homeAirport" placeholder="e.g. KFDK">
 
+  <label for="favoriteAirports">Favorite Airports (comma-separated, up to 6)</label>
+  <input type="text" id="favoriteAirports" placeholder="e.g. KMRB, KEEN" style="width: 280px;">
+
   <label for="startupzoom">Default Zoom Level (1-20)</label>
   <input type="number" id="startupzoom" min="1" max="20" step="1">
 
@@ -127,6 +130,7 @@
 
   <script>
     const homeAirportInput = document.getElementById("homeAirport");
+    const favoriteAirportsInput = document.getElementById("favoriteAirports");
     const startupzoomInput = document.getElementById("startupzoom");
     const timezoneSelect = document.getElementById("timezone");
     const showRadarCheckbox = document.getElementById("showRadarByDefault");
@@ -157,6 +161,7 @@
       .then(res => res.json())
       .then(settings => {
         homeAirportInput.value = settings.homeAirport || "";
+        favoriteAirportsInput.value = (settings.favoriteAirports || []).join(", ");
         startupzoomInput.value = settings.startupzoom || "";
         if (settings.timezone) {
           timezoneSelect.value = settings.timezone;
@@ -177,6 +182,19 @@
         return;
       }
 
+      const favoriteAirports = favoriteAirportsInput.value
+        .split(",")
+        .map((v) => v.trim().toUpperCase())
+        .filter((v) => v.length > 0);
+      if (favoriteAirports.some((v) => !/^[A-Z0-9]{3,4}$/.test(v))) {
+        setStatus("Favorite airports must each be a 3-4 character ICAO/FAA code.", true);
+        return;
+      }
+      if (favoriteAirports.length > 6) {
+        setStatus("Favorite airports: 6 maximum.", true);
+        return;
+      }
+
       const startupzoom = Number(startupzoomInput.value);
       if (!Number.isInteger(startupzoom) || startupzoom < 1 || startupzoom > 20) {
         setStatus("Default zoom level must be a whole number from 1 to 20.", true);
@@ -194,6 +212,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           homeAirport: icao,
+          favoriteAirports: favoriteAirports,
           startupzoom: startupzoom,
           timezone: timezoneSelect.value,
           showRadarByDefault: showRadarCheckbox.checked,

@@ -131,6 +131,90 @@ const FAA_TFR_WFS_URL = "https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&versi
 const TFR_CACHE_TTL_MS = 15 * 60 * 1000;
 let tfrCache = { data: null, fetchedAt: 0 };
 
+// NWS/FAA public "FD" winds-and-temperatures-aloft text product. Fixed
+// station list of ~180 major airports (not every field), so the home
+// airport's actual station is usually a nearest-neighbor match, not an
+// exact one - see /windsaloft below.
+const WINDS_ALOFT_URL = "https://aviationweather.gov/api/data/windtemp?region=us&level=low&fcst=06";
+const WINDS_ALOFT_CACHE_TTL_MS = 30 * 60 * 1000;
+const WINDS_ALOFT_MAX_STATION_DISTANCE_NM = 150;
+let windsAloftCache = { data: null, fetchedAt: 0 };
+const airportCoordsByIdent = new Map();
+
+function haversineNm(lat1, lon1, lat2, lon2) {
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const earthRadiusNm = 3440.065;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * earthRadiusNm * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Decode one FD cell for a low-altitude level (3000-12000ft, where a
+ * temperature - if present - always has an explicit +/- sign; the
+ * implicit-always-negative-above-24000ft format doesn't apply at these
+ * altitudes, so this deliberately doesn't need to handle it).
+ * @param {string} raw trimmed cell text, e.g. "2007+10", "9900+15", "0208", or ""
+ * @returns {object|null} null if no forecast for this station/level
+ */
+function decodeWindCell(raw) {
+    if (!raw) return null;
+
+    if (raw.startsWith("9900")) {
+        // Light and variable - wind under 5kt, direction not meaningful.
+        const tempMatch = raw.slice(4).match(/^([+-]\d{2})$/);
+        return { lightAndVariable: true, direction: null, speed: null, tempC: tempMatch ? Number(tempMatch[1]) : null };
+    }
+
+    const match = raw.match(/^(\d{2})(\d{2})([+-]\d{2})?$/);
+    if (!match) return null;
+
+    let directionTens = Number(match[1]);
+    let speed = Number(match[2]);
+    const tempC = match[3] ? Number(match[3]) : null;
+
+    // Speeds >=100kt: 50 is added to the direction-tens digit and 100
+    // subtracted from speed at encode time (e.g. 240deg/105kt -> "7405").
+    if (directionTens >= 51) {
+        directionTens -= 50;
+        speed += 100;
+    }
+
+    return { lightAndVariable: false, direction: directionTens * 10, speed, tempC };
+}
+
+/**
+ * Parse the FD product's fixed-width-ish text into {stationCode: [cell, cell, ...]}
+ * for just the low-altitude levels (3000/6000/9000/12000ft) - field
+ * boundaries are derived from the header row's altitude label positions,
+ * not naive whitespace-splitting, since a station with no forecast at an
+ * early level (common - see the module comment) collapses that column
+ * entirely rather than leaving a fixed-width blank.
+ */
+function parseLowAltitudeWindsAloft(text) {
+    const lines = text.split("\n");
+    const headerLine = lines.find((line) => line.startsWith("FT "));
+    if (!headerLine) return new Map();
+
+    const labelEnds = [...headerLine.matchAll(/\d{4,5}/g)].map((m) => m.index + m[0].length);
+    const fieldBounds = [3, ...labelEnds].slice(0, 5); // station code + first 4 low levels
+
+    const stations = new Map();
+    for (const line of lines) {
+        const stationMatch = line.match(/^([A-Z0-9]{3,4}) /);
+        if (!stationMatch) continue;
+
+        const cells = [];
+        for (let i = 0; i < fieldBounds.length - 1; i++) {
+            cells.push(line.slice(fieldBounds[i], fieldBounds[i + 1]).trim());
+        }
+        stations.set(stationMatch[1], cells);
+    }
+    return stations;
+}
+
 /******************************************************
    if running in a docker container, check to see if an
    external volume for the database folder exists, if so,
@@ -209,6 +293,9 @@ const metadatasets = new Map();
 
     rawdata = fs.readFileSync(`${__dirname}/airports.json`);
     airports = JSON.parse(rawdata);
+    (airports.airports || []).forEach((airport) => {
+        airportCoordsByIdent.set(airport.ident, { lat: airport.lat, lon: airport.lon });
+    });
 
     wss = new WebSocket.Server({ port: settings.wsport });
     try {
@@ -388,6 +475,14 @@ try {
             catch {
                 return undefined;
             }
+        },
+        favoriteAirports: (value) => {
+            if (!Array.isArray(value)) return undefined;
+            const idents = value
+                .map((v) => String(v || "").trim().toUpperCase())
+                .filter((v) => /^[A-Z0-9]{3,4}$/.test(v))
+                .slice(0, 6);
+            return idents;
         },
         nightDimEnabled: (value) => (typeof value === "boolean" ? value : undefined),
         nightDimStart: (value) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : undefined),
@@ -603,6 +698,70 @@ try {
             console.log("Failed to fetch FAA TFRs:", err);
             res.writeHead(200);
             res.end(JSON.stringify(tfrCache.data || emptyCollection));
+        }
+    });
+
+    // Winds/temps aloft (low altitudes only - see parseLowAltitudeWindsAloft)
+    // for the FD collective station nearest the home airport. The FD
+    // station list covers ~180 major airports, not every field, so this is
+    // almost always a nearest-neighbor match rather than an exact one -
+    // the response reports which station and how far away it is so the
+    // client can show that honestly instead of implying it's the home
+    // airport's own forecast.
+    app.get("/windsaloft", async (req, res) => {
+        const empty = { station: null, distanceNm: null, levels: [] };
+        const currentSettings = loadSettings();
+        const homeIdent = String(currentSettings.homeAirport || "").trim().toUpperCase();
+        const homeCoords = airportCoordsByIdent.get(homeIdent);
+
+        if (!homeCoords) {
+            res.writeHead(200);
+            res.end(JSON.stringify(empty));
+            return;
+        }
+
+        try {
+            if (!windsAloftCache.data || Date.now() - windsAloftCache.fetchedAt >= WINDS_ALOFT_CACHE_TTL_MS) {
+                const response = await fetch(WINDS_ALOFT_URL);
+                const text = await response.text();
+                windsAloftCache = { data: parseLowAltitudeWindsAloft(text), fetchedAt: Date.now() };
+            }
+
+            let nearestStation = null;
+            let nearestDistanceNm = Infinity;
+            for (const stationCode of windsAloftCache.data.keys()) {
+                const stationCoords = airportCoordsByIdent.get(`K${stationCode}`);
+                if (!stationCoords) continue;
+                const distanceNm = haversineNm(homeCoords.lat, homeCoords.lon, stationCoords.lat, stationCoords.lon);
+                if (distanceNm < nearestDistanceNm) {
+                    nearestDistanceNm = distanceNm;
+                    nearestStation = stationCode;
+                }
+            }
+
+            if (!nearestStation || nearestDistanceNm > WINDS_ALOFT_MAX_STATION_DISTANCE_NM) {
+                res.writeHead(200);
+                res.end(JSON.stringify(empty));
+                return;
+            }
+
+            const altitudes = [3000, 6000, 9000, 12000];
+            const cells = windsAloftCache.data.get(nearestStation);
+            const levels = cells
+                .map((cell, i) => ({ altitude: altitudes[i], ...decodeWindCell(cell) }))
+                .filter((level) => level.direction !== undefined || level.lightAndVariable);
+
+            res.writeHead(200);
+            res.end(JSON.stringify({
+                station: nearestStation,
+                distanceNm: Math.round(nearestDistanceNm),
+                levels
+            }));
+        }
+        catch (err) {
+            console.log("Failed to fetch winds aloft:", err);
+            res.writeHead(200);
+            res.end(JSON.stringify(empty));
         }
     });
 

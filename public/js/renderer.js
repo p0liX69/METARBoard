@@ -54,6 +54,52 @@ async function fetchHomeAirspace(icao) {
     }
 }
 
+let windsAloftIcaoFetched = null;
+
+/**
+ * Fetch and render low-altitude winds aloft for the FD collective station
+ * nearest the home airport (via the server-side /windsaloft proxy - see
+ * its comment for why this is a nearest-neighbor match, not exact).
+ */
+async function fetchWindsAloft(icao) {
+    if (!icao || windsAloftIcaoFetched === icao) return;
+    windsAloftIcaoFetched = icao;
+
+    try {
+        const response = await fetch(URL_GET_WINDS_ALOFT);
+        const data = await response.json();
+        renderWindsAloftPanel(data);
+    }
+    catch (err) {
+        console.log(`Failed to load winds aloft for ${icao}:`, err);
+    }
+}
+
+function formatWindLevel(level) {
+    if (level.lightAndVariable) {
+        return `Light/variable${level.tempC !== null ? ` (${level.tempC}°C)` : ""}`;
+    }
+    const tempPart = level.tempC !== null ? ` ${level.tempC}°C` : "";
+    return `${String(level.direction).padStart(3, "0")}° @ ${level.speed}kt${tempPart}`;
+}
+
+function renderWindsAloftPanel(data) {
+    const panel = document.getElementById("windsAloftBox");
+    if (!data || !data.station || !data.levels.length) {
+        panel.style.display = "none";
+        return;
+    }
+
+    panel.style.display = "block";
+    const rows = data.levels.map((level) =>
+        `<tr><td>${level.altitude.toLocaleString()} ft:</td><td>${formatWindLevel(level)}</td></tr>`
+    ).join("");
+    panel.innerHTML = `
+        <div class="windsaloft-header">Winds Aloft - ${escapeHtml(data.station)} (${data.distanceNm}nm)</div>
+        <table class="windsaloft-table">${rows}</table>
+    `;
+}
+
 const TFR_REFRESH_MS = 15 * 60 * 1000;
 
 /**
@@ -99,6 +145,7 @@ function centerOnHomeAirport() {
     if (apt) {
         hasCenteredOnHomeAirport = true;
         fetchHomeAirspace(home);
+        fetchWindsAloft(home);
         const savedView = JSON.parse(localStorage.getItem("lastMapView") || "null");
         const hasValidSavedView = savedView
             && Array.isArray(savedView.center)
@@ -171,6 +218,7 @@ let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
 let URL_GET_HELIPORTS       = `${URL_SERVER}/getheliports`;
 let URL_GET_HOME_AIRSPACE   = `${URL_SERVER}/homeairspace`;
 let URL_GET_TFRS            = `${URL_SERVER}/tfrs`;
+let URL_GET_WINDS_ALOFT     = `${URL_SERVER}/windsaloft`;
 
 let deg = 0;
 let alt = 0;
@@ -370,6 +418,44 @@ document.body.appendChild(utcClockContainer);
 const nightDimOverlay = document.createElement("div");
 nightDimOverlay.id = "nightDimOverlay";
 document.body.appendChild(nightDimOverlay);
+
+// Bottom-center strip of favorite airports (configured in /admin) - a
+// quick-glance row separate from the home airport's own detailed panel.
+const favoritesStrip = document.createElement("div");
+favoritesStrip.id = "favoritesStrip";
+document.body.appendChild(favoritesStrip);
+
+// Bottom-left winds aloft panel, mirroring the home METAR panel's
+// bottom-right position.
+const windsAloftBox = document.createElement("div");
+windsAloftBox.id = "windsAloftBox";
+windsAloftBox.className = "static-metar-popup windsaloft-popup";
+document.body.appendChild(windsAloftBox);
+
+/**
+ * Refresh the favorites strip from whatever METAR data is already loaded
+ * for the map - no separate fetch, this reuses metarFeatures.
+ */
+function updateFavoritesStrip() {
+    const favorites = (settings && settings.favoriteAirports) || [];
+    if (!favorites.length) {
+        favoritesStrip.innerHTML = "";
+        favoritesStrip.style.display = "none";
+        return;
+    }
+
+    favoritesStrip.style.display = "flex";
+    favoritesStrip.innerHTML = favorites.map((ident) => {
+        const feature = metarFeatures.getArray().find((f) => f.getId() === ident);
+        const metar = feature ? feature.get("metar") : null;
+        const cat = metar ? (metar.flight_category || "VFR") : null;
+        const catClass = cat ? cat.toLowerCase() : "unknown";
+        return `<div class="favorite-chip ${catClass}">`
+            + `<span class="favorite-ident">${escapeHtml(ident)}</span>`
+            + `<span class="favorite-category">${escapeHtml(cat || "N/A")}</span>`
+            + `</div>`;
+    }).join("");
+}
 
 /**
  * @returns {number} minutes since local midnight, in the configured timezone
@@ -1848,6 +1934,8 @@ function processTraffic() {
                 }
             }
         }, 1000);
+
+        updateFavoritesStrip();
     }
 }
 
