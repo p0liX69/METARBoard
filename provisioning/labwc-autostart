@@ -5,6 +5,14 @@
 # desktop/wallpaper manager - this is a dedicated-purpose display, not a
 # general desktop. kanshi is kept so display/output configuration still
 # works. lwrespawn auto-restarts chromium if it ever crashes.
+#
+# --password-store=basic: without this, Chromium's first attempt to touch
+# its password manager talks to the OS keyring (libsecret/gnome-keyring),
+# which was never unlocked because autologin skips the normal PAM flow that
+# would unlock it - the result is a "enter password to unlock your login
+# keyring" dialog sitting on top of the kiosk with no keyboard to answer it.
+# This flag tells Chromium to use its own internal store instead, so it
+# never talks to the keyring at all.
 
 /usr/bin/kanshi &
 /usr/bin/lwrespawn /usr/bin/chromium \
@@ -15,5 +23,6 @@
     --disable-translate \
     --overscroll-history-navigation=0 \
     --check-for-update-interval=31536000 \
+    --password-store=basic \
     --start-fullscreen \
     http://localhost:8500 &
