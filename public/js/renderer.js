@@ -2277,22 +2277,26 @@ if (settings.savepositionhistory) {
  * into the future - so the default (non-animated) view always shows real,
  * already-available data.
  */
-function setupRadarAnimation() {
-    const FRAME_COUNT = 12;
-    const STEP_MS = 15 * 60 * 1000;
-    const NEXRAD_UPDATE_MS = 5 * 60 * 1000;
-    // Floor (never round up into the future) to a clean 5-minute mark,
-    // matching NEXRAD's real update cadence - an arbitrary millisecond-
-    // precision "now" almost never matches an actual available WMS frame,
-    // which silently renders as empty/transparent tiles instead of an error.
-    const now = Math.floor(Date.now() / NEXRAD_UPDATE_MS) * NEXRAD_UPDATE_MS;
+// Iowa State's higher-resolution "digital reflectivity" mosaic (n0q) -
+// noticeably smoother/less pixelated than the legacy 8-bit n0r product
+// this used before - doesn't support a single time-parameterized layer
+// the way n0r-wmst did. Instead each of these fixed "minutes ago" offsets
+// is its own named layer, computed relative to request time server-side;
+// oldest first so the existing "last index = latest frame" convention
+// (see showLatestRadarFrame/advanceRadarFrame) keeps working unchanged.
+const N0Q_OFFSET_SUFFIXES = ['-m55m', '-m50m', '-m45m', '-m40m', '-m35m', '-m30m', '-m25m', '-m20m', '-m15m', '-m10m', '-m05m', ''];
 
-    for (let i = 0; i < FRAME_COUNT; i++) {
-        const timestamp = new Date(now - STEP_MS * (FRAME_COUNT - 1 - i));
+function setupRadarAnimation() {
+    const STEP_MS = 5 * 60 * 1000;
+    const now = Date.now();
+
+    N0Q_OFFSET_SUFFIXES.forEach((suffix, i) => {
+        const minutesAgo = N0Q_OFFSET_SUFFIXES.length - 1 - i;
+        const timestamp = new Date(now - STEP_MS * minutesAgo);
         const source = new ol.source.TileWMS({
             attributions: ['Iowa State University'],
             url: settings.animatedwxurl,
-            params: { 'LAYERS': 'nexrad-n0r-wmst', 'TIME': timestamp.toISOString() }
+            params: { 'LAYERS': `nexrad-n0q${suffix}` }
         });
         const layer = new ol.layer.Tile({
             title: 'Radar',
@@ -2305,7 +2309,7 @@ function setupRadarAnimation() {
         map.addLayer(layer);
         radarFrameLayers.push(layer);
         radarFrameTimestamps.push(timestamp);
-    }
+    });
 
     currentRadarFrameIndex = radarFrameLayers.length - 1;
 }
