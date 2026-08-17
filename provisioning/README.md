@@ -148,6 +148,15 @@ If the desktop user or `chromium` binary isn't found, `setup-pi.sh` skips
 this step and prints a warning — check that you flashed the desktop image
 and re-run the script.
 
+**Status as of 2026-08-16:** the app itself (charts, radar, METARs, live
+traffic) is fully working and verified on the test Pi (192.168.9.189). The
+kiosk autostart file is installed and correct (confirmed via SSH), but a
+`sudo reboot` + actually watching the attached display hasn't happened
+yet — that's the next thing to verify once it's hooked up to a real
+screen/TV. If it doesn't come up fullscreen on its own, check
+`~/.config/labwc/autostart` is still in place and that autologin is
+actually enabled (`raspi-config` → System Options → Boot / Auto Login).
+
 ## Re-provisioning / updating an existing Pi
 
 Re-running `sudo ./provisioning/setup-pi.sh` from an updated checkout will
