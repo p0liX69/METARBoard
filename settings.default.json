@@ -3,7 +3,7 @@
     "keepaliveintervalmsec": 30000,
     "httpport": 8500,
     "wsport": 8550,
-    "startupzoom": 9,
+    "startupzoom": 11,
     "useOSMonlinemap": false,
     "homeAirport": "KHGR",
     "showRadarByDefault": true,

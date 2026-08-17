@@ -30,6 +30,31 @@ function updateVisibleCharts() {
 }
 
 /**
+ * Fetch the real FAA Class B/C/D/E-surface airspace boundary for the given
+ * ICAO id (via the server-side /homeairspace proxy) and render it as a
+ * highlighted outline. Only fetches once per identifier - airspace
+ * boundaries don't change during a session, so repeated calls from
+ * centerOnHomeAirport() are otherwise no-ops.
+ */
+async function fetchHomeAirspace(icao) {
+    if (!icao || homeAirspaceIcaoFetched === icao) return;
+    homeAirspaceIcaoFetched = icao;
+
+    try {
+        const response = await fetch(URL_GET_HOME_AIRSPACE);
+        const geojson = await response.json();
+        const features = new ol.format.GeoJSON().readFeatures(geojson, {
+            featureProjection: 'EPSG:3857'
+        });
+        homeAirspaceFeatures.clear();
+        homeAirspaceFeatures.extend(features);
+    }
+    catch (err) {
+        console.log(`Failed to load home airspace boundary for ${icao}:`, err);
+    }
+}
+
+/**
  * Center on the saved home airport. If a previous map view (center/zoom)
  * was saved, that view is restored instead so routine calls (e.g. after a
  * settings-triggered reload) don't clobber whatever the user last panned/
@@ -49,6 +74,7 @@ function centerOnHomeAirport() {
 
     if (apt) {
         hasCenteredOnHomeAirport = true;
+        fetchHomeAirspace(home);
         const savedView = JSON.parse(localStorage.getItem("lastMapView") || "null");
         const hasValidSavedView = savedView
             && Array.isArray(savedView.center)
@@ -119,6 +145,7 @@ let URL_GET_HISTORY         = `${URL_SERVER}/gethistory`;
 let URL_GET_SETTINGS        = `${URL_SERVER}/getsettings`;
 let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
 let URL_GET_HELIPORTS       = `${URL_SERVER}/getheliports`;
+let URL_GET_HOME_AIRSPACE   = `${URL_SERVER}/homeairspace`;
 
 let deg = 0;
 let alt = 0;
@@ -229,6 +256,8 @@ let airportFeatures = new ol.Collection();
 let tafFeatures = new ol.Collection();
 let pirepFeatures = new ol.Collection();
 let trafficFeatures = new ol.Collection();
+let homeAirspaceFeatures = new ol.Collection();
+let homeAirspaceIcaoFetched = null;
 
 /**
  * Vector sources
@@ -238,6 +267,7 @@ let airportVectorSource;
 let tafVectorSource;
 let pirepVectorSource;
 let trafficVectorSource;
+let homeAirspaceVectorSource;
 
 /**
  * Vector layers
@@ -247,6 +277,7 @@ let metarVectorLayer;
 let tafVectorLayer;
 let pirepVectorLayer;
 let trafficVectorLayer;
+let homeAirspaceVectorLayer;
 
 /**
  * Tile layers
@@ -349,6 +380,17 @@ async function loadInitialData() {
                 localStorage.removeItem("lastMapView");
             }
             localStorage.setItem("homeAirport", settings.homeAirport);
+        }
+
+        if (settings.startupzoom != null) {
+            const previousStartupZoom = localStorage.getItem("startupzoom");
+            if (previousStartupZoom && Number(previousStartupZoom) !== settings.startupzoom) {
+                // Configured default zoom changed - forget the saved view so
+                // the new default actually takes effect instead of restoring
+                // whatever zoom level was saved under the old default.
+                localStorage.removeItem("lastMapView");
+            }
+            localStorage.setItem("startupzoom", settings.startupzoom);
         }
         setupRadarAnimation();
         if (settings.showRadarByDefault) {
@@ -627,6 +669,31 @@ const heliportStyle = new ol.style.Style({
 const pirepStyle = new ol.style.Style({
     image: pirepMarker
 });
+
+// Loosely follows sectional chart convention (Class B/blue solid, Class
+// C/magenta solid, Class D/blue dashed, Class E surface/magenta dashed),
+// falling back to a thin gray dash for anything else (e.g. a Mode C veil).
+const HOME_AIRSPACE_STYLE_BY_CLASS = {
+    B: { color: '30, 144, 255', width: 3, dash: null },
+    C: { color: '255, 0, 200', width: 3, dash: null },
+    D: { color: '30, 144, 255', width: 2, dash: [8, 6] },
+    E: { color: '255, 0, 200', width: 2, dash: [8, 6] }
+};
+const HOME_AIRSPACE_STYLE_DEFAULT = { color: '160, 160, 160', width: 1.5, dash: [4, 4] };
+
+function homeAirspaceStyle(feature) {
+    const config = HOME_AIRSPACE_STYLE_BY_CLASS[feature.get('CLASS')] || HOME_AIRSPACE_STYLE_DEFAULT;
+    return new ol.style.Style({
+        stroke: new ol.style.Stroke({
+            color: `rgba(${config.color}, 0.9)`,
+            width: config.width,
+            lineDash: config.dash
+        }),
+        fill: new ol.style.Fill({
+            color: `rgba(${config.color}, 0.08)`
+        })
+    });
+}
 
 /**
  * Load airports into their feature collection 
@@ -1826,6 +1893,19 @@ trafficVectorLayer = new ol.layer.Vector({
 });
 map.addLayer(trafficVectorLayer);
 trafficVectorLayer.setVisible(true);
+
+homeAirspaceVectorSource = new ol.source.Vector({
+    features: homeAirspaceFeatures
+});
+homeAirspaceVectorLayer = new ol.layer.Vector({
+    title: "Home Airspace",
+    source: homeAirspaceVectorSource,
+    style: homeAirspaceStyle,
+    visible: true,
+    extent: extent,
+    zIndex: 10.6
+});
+map.addLayer(homeAirspaceVectorLayer);
 
 if (settings.useOSMonlinemap) {
     const osmOnlineTileLayer = new ol.layer.Tile({

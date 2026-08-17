@@ -111,6 +111,11 @@ function writeSettings(newSettings) {
 
 let settings = loadSettings();
 
+// FAA's public "Class Airspace" dataset (Class B/C/D surface areas), public
+// domain federal data, no API key required.
+const FAA_AIRSPACE_URL = "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0/query";
+let homeAirspaceCache = new Map();
+
 /******************************************************
    if running in a docker container, check to see if an
    external volume for the database folder exists, if so,
@@ -400,6 +405,70 @@ try {
 
         res.writeHead(200);
         res.end(JSON.stringify(result));
+    });
+
+    // Real FAA Class B/C/D/E-surface airspace boundary for the current home
+    // airport, so the kiosk display can outline it instead of just marking
+    // the airport with a dot. Queries the FAA's public Class Airspace
+    // FeatureServer directly (no API key, public-domain federal data) and
+    // caches the result per ICAO id in memory - airspace boundaries don't
+    // change during a server's lifetime, so there's no need to re-fetch on
+    // every page load. Returns an empty FeatureCollection (not an error) for
+    // airports with no charted controlled airspace, or on any fetch failure.
+    app.get("/homeairspace", async (req, res) => {
+        const currentSettings = loadSettings();
+        const icao = String(currentSettings.homeAirport || "").trim().toUpperCase();
+        const emptyCollection = { type: "FeatureCollection", features: [] };
+
+        if (!/^[A-Z0-9]{3,4}$/.test(icao)) {
+            res.writeHead(200);
+            res.end(JSON.stringify(emptyCollection));
+            return;
+        }
+
+        if (homeAirspaceCache.has(icao)) {
+            res.writeHead(200);
+            res.end(JSON.stringify(homeAirspaceCache.get(icao)));
+            return;
+        }
+
+        try {
+            const params = new URLSearchParams({
+                where: `ICAO_ID='${icao}'`,
+                outFields: "IDENT,ICAO_ID,NAME,CLASS,LOCAL_TYPE,UPPER_VAL,LOWER_VAL",
+                f: "geojson"
+            });
+            const response = await fetch(`${FAA_AIRSPACE_URL}?${params}`);
+            const geojson = await response.json();
+
+            // A busy Class B airport reports 20+ overlapping altitude
+            // "shelves" of the same wedding-cake airspace - keep only the
+            // surface-touching shelf of each distinct boundary (Mode C veil,
+            // Class B core, Class D, etc.), deduped by name, so the display
+            // shows a handful of clean nested outlines instead of a mess of
+            // redundant rings.
+            let result = emptyCollection;
+            if (geojson?.type === "FeatureCollection") {
+                const seenNames = new Set();
+                const surfaceFeatures = geojson.features.filter((feature) => {
+                    if (feature.properties?.LOWER_VAL !== 0) return false;
+                    const name = feature.properties?.NAME;
+                    if (seenNames.has(name)) return false;
+                    seenNames.add(name);
+                    return true;
+                });
+                result = { type: "FeatureCollection", features: surfaceFeatures };
+            }
+
+            homeAirspaceCache.set(icao, result);
+            res.writeHead(200);
+            res.end(JSON.stringify(result));
+        }
+        catch (err) {
+            console.log(`Failed to fetch FAA airspace boundary for ${icao}:`, err);
+            res.writeHead(200);
+            res.end(JSON.stringify(emptyCollection));
+        }
     });
 
     app.get("/databaselist", (req, res) => {
