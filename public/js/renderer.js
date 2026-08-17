@@ -1481,9 +1481,12 @@ function processTraffic() {
             console.error(`Traffic render error for ${key}:`, err);
         }
     }
-
-    trafficVectorSource.clear();
-    trafficVectorSource.addFeatures(trafficFeatures.getArray());
+    // trafficVectorSource was constructed with `features: trafficFeatures`,
+    // so it already mirrors this collection live - no separate sync step
+    // needed. (Previously this called trafficVectorSource.clear(), which
+    // clears the SAME shared collection - wiping out everything just
+    // pushed above on every single call, which is why traffic never
+    // rendered no matter how much data was in trafficMap.)
 }
 
 /**
