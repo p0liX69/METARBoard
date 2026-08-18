@@ -131,6 +131,87 @@ async function fetchTfrs() {
     }
 }
 
+const LIGHTNING_REFRESH_MS = 15 * 1000;
+
+/**
+ * Fetch recent lightning strikes (via the server-side /lightning proxy,
+ * which buffers a persistent Blitzortung feed connection) and render them.
+ * Refetched frequently since, unlike TFRs, strikes are near-real-time.
+ */
+async function fetchLightning() {
+    if (settings && settings.showLightning === false) {
+        lightningFeatures.clear();
+        return;
+    }
+
+    try {
+        const response = await fetch(URL_GET_LIGHTNING);
+        const geojson = await response.json();
+        const features = new ol.format.GeoJSON().readFeatures(geojson, {
+            featureProjection: 'EPSG:3857'
+        });
+        features.forEach((feature) => feature.set("datatype", "lightning"));
+        lightningFeatures.clear();
+        lightningFeatures.extend(features);
+    }
+    catch (err) {
+        console.log("Failed to load lightning strikes:", err);
+    }
+}
+
+const SIGMET_REFRESH_MS = 10 * 60 * 1000;
+
+/**
+ * Fetch active domestic SIGMETs (via the server-side /sigmets proxy,
+ * which strips the legacy IFR-hazard entries the underlying feed can
+ * still return - see /airmets for those) and render them.
+ */
+async function fetchSigmets() {
+    if (settings && settings.showSigmets === false) {
+        sigmetFeatures.clear();
+        return;
+    }
+
+    try {
+        const response = await fetch(URL_GET_SIGMETS);
+        const geojson = await response.json();
+        const features = new ol.format.GeoJSON().readFeatures(geojson, {
+            featureProjection: 'EPSG:3857'
+        });
+        features.forEach((feature) => feature.set("datatype", "sigmet"));
+        sigmetFeatures.clear();
+        sigmetFeatures.extend(features);
+    }
+    catch (err) {
+        console.log("Failed to load SIGMETs:", err);
+    }
+}
+
+/**
+ * Fetch the current G-AIRMET panel (via the server-side /airmets proxy)
+ * and render it.
+ */
+async function fetchAirmets() {
+    if (settings && settings.showAirmets === false) {
+        airmetFeatures.clear();
+        return;
+    }
+
+    try {
+        const response = await fetch(URL_GET_AIRMETS);
+        const geojson = await response.json();
+        const features = new ol.format.GeoJSON().readFeatures(geojson, {
+            featureProjection: 'EPSG:3857'
+        });
+        features.forEach((feature) => feature.set("datatype", "airmet"));
+        airmetFeatures.clear();
+        airmetFeatures.extend(features);
+    }
+    catch (err) {
+        console.log("Failed to load AIRMETs:", err);
+    }
+}
+
 /**
  * Center on the saved home airport. If a previous map view (center/zoom)
  * was saved, that view is restored instead so routine calls (e.g. after a
@@ -226,6 +307,9 @@ let URL_PUT_HISTORY         = `${URL_SERVER}/savehistory`;
 let URL_GET_HELIPORTS       = `${URL_SERVER}/getheliports`;
 let URL_GET_HOME_AIRSPACE   = `${URL_SERVER}/homeairspace`;
 let URL_GET_TFRS            = `${URL_SERVER}/tfrs`;
+let URL_GET_LIGHTNING       = `${URL_SERVER}/lightning`;
+let URL_GET_SIGMETS         = `${URL_SERVER}/sigmets`;
+let URL_GET_AIRMETS         = `${URL_SERVER}/airmets`;
 let URL_GET_WINDS_ALOFT     = `${URL_SERVER}/windsaloft`;
 
 let deg = 0;
@@ -341,6 +425,9 @@ let trafficFeatures = new ol.Collection();
 let homeAirspaceFeatures = new ol.Collection();
 let homeAirspaceIcaoFetched = null;
 let tfrFeatures = new ol.Collection();
+let lightningFeatures = new ol.Collection();
+let sigmetFeatures = new ol.Collection();
+let airmetFeatures = new ol.Collection();
 
 /**
  * Vector sources
@@ -352,6 +439,9 @@ let pirepVectorSource;
 let trafficVectorSource;
 let homeAirspaceVectorSource;
 let tfrVectorSource;
+let lightningVectorSource;
+let sigmetVectorSource;
+let airmetVectorSource;
 
 /**
  * Vector layers
@@ -363,6 +453,9 @@ let pirepVectorLayer;
 let trafficVectorLayer;
 let homeAirspaceVectorLayer;
 let tfrVectorLayer;
+let lightningVectorLayer;
+let sigmetVectorLayer;
+let airmetVectorLayer;
 
 /**
  * Tile layers
@@ -690,6 +783,15 @@ async function loadInitialData() {
 
         fetchTfrs();
         setInterval(fetchTfrs, TFR_REFRESH_MS);
+
+        fetchLightning();
+        setInterval(fetchLightning, LIGHTNING_REFRESH_MS);
+
+        fetchSigmets();
+        setInterval(fetchSigmets, SIGMET_REFRESH_MS);
+
+        fetchAirmets();
+        setInterval(fetchAirmets, SIGMET_REFRESH_MS);
     }
     catch (err) {
         console.log(err);
@@ -1000,6 +1102,96 @@ const tfrStyle = new ol.style.Style({
         color: 'rgba(255, 60, 0, 0.12)'
     })
 });
+
+// Strikes fade from full brightness to invisible over their max displayed
+// age, so the overlay reads as "recent storm activity" rather than an
+// ever-growing pile of dots. A style function (not a static style) re-runs
+// on every render, which is what makes the fade actually animate as time
+// passes - see the lightningVectorSource.changed() tick below.
+const LIGHTNING_DISPLAY_MAX_AGE_MS = 10 * 60 * 1000;
+
+function lightningStyle(feature) {
+    const ageMs = Date.now() - feature.get("time");
+    const opacity = Math.max(0, 1 - ageMs / LIGHTNING_DISPLAY_MAX_AGE_MS);
+    return new ol.style.Style({
+        image: new ol.style.Circle({
+            radius: 5,
+            fill: new ol.style.Fill({ color: `rgba(255, 235, 60, ${opacity})` }),
+            stroke: new ol.style.Stroke({ color: `rgba(120, 90, 0, ${opacity * 0.9})`, width: 1 })
+        })
+    });
+}
+
+// Color-coded by hazard type, same map-lookup-with-default pattern as
+// homeAirspaceStyle above. Both SIGMET and AIRMET APIs return "hazard" as
+// a short code whose exact casing/separators vary by product, hence the
+// normalize step before lookup.
+function normalizeHazardCode(hazard) {
+    return String(hazard || "").toUpperCase().replace(/[\s_]+/g, "-");
+}
+
+// Vivid, mutually-distinct hues per hazard (not muted grays/tans that
+// blend into the sectional chart's own palette) plus a short text label,
+// following the same "color = hazard type" convention EFB apps like
+// ForeFlight use so a glance is enough to tell IFR from icing from
+// turbulence without opening a legend.
+const SIGMET_STYLE_BY_HAZARD = {
+    "CONV": { color: '220, 20, 20', width: 3, label: 'CONV' },
+    "CONVECTIVE": { color: '220, 20, 20', width: 3, label: 'CONV' },
+    "TURB": { color: '210, 110, 0', width: 3, label: 'TURB' },
+    "ICE": { color: '130, 60, 200', width: 3, label: 'ICE' }
+};
+const SIGMET_STYLE_DEFAULT = { color: '220, 20, 20', width: 3, label: 'SIGMET' };
+
+function labelText(config) {
+    return new ol.style.Text({
+        text: config.label,
+        font: 'bold 14px sans-serif',
+        fill: new ol.style.Fill({ color: '#fff' }),
+        stroke: new ol.style.Stroke({ color: `rgb(${config.color})`, width: 3 }),
+        overflow: true
+    });
+}
+
+function sigmetStyle(feature) {
+    const config = SIGMET_STYLE_BY_HAZARD[normalizeHazardCode(feature.get('hazard'))] || SIGMET_STYLE_DEFAULT;
+    return new ol.style.Style({
+        stroke: new ol.style.Stroke({ color: `rgba(${config.color}, 0.95)`, width: config.width, lineDash: [2, 4] }),
+        fill: new ol.style.Fill({ color: `rgba(${config.color}, 0.22)` }),
+        text: labelText(config)
+    });
+}
+
+// Key names match the actual "hazard" values the G-AIRMET API returns
+// (confirmed against live data: e.g. "MT_OBSC", not the "mtn_obs" query-
+// param spelling the API docs use) after normalizeHazardCode's uppercase +
+// hyphenate pass. Colors loosely follow the AIRMET Sierra/Tango/Zulu
+// families ForeFlight uses (blue/gray = IFR & obscuration, amber/brown =
+// turbulence & wind, purple/teal = icing & freezing level).
+const AIRMET_STYLE_BY_HAZARD = {
+    "IFR": { color: '30, 110, 220', label: 'IFR' },
+    "TURB-HI": { color: '200, 120, 10', label: 'TURB' },
+    "TURB-LO": { color: '200, 120, 10', label: 'TURB' },
+    "ICE": { color: '150, 60, 190', label: 'ICE' },
+    "MT-OBSC": { color: '139, 90, 43', label: 'MT OBSC' },
+    "FZLVL": { color: '0, 160, 160', label: 'FZLVL' },
+    "LLWS": { color: '200, 170, 0', label: 'LLWS' },
+    "SFC-WIND": { color: '150, 180, 0', label: 'SFC WIND' }
+};
+const AIRMET_STYLE_DEFAULT = { color: '110, 110, 110', label: 'AIRMET' };
+
+// A G-AIRMET panel is often a single polygon spanning several states, so a
+// zoomed-in kiosk view can sit entirely inside one with no border ever in
+// frame - the fill has to be visible on its own, not just the outline, or
+// the overlay is effectively invisible against a busy sectional chart.
+function airmetStyle(feature) {
+    const config = AIRMET_STYLE_BY_HAZARD[normalizeHazardCode(feature.get('hazard'))] || AIRMET_STYLE_DEFAULT;
+    return new ol.style.Style({
+        stroke: new ol.style.Stroke({ color: `rgba(${config.color}, 0.9)`, width: 2.5, lineDash: [8, 5] }),
+        fill: new ol.style.Fill({ color: `rgba(${config.color}, 0.24)` }),
+        text: labelText(config)
+    });
+}
 
 /**
  * Load airports into their feature collection 
@@ -2273,6 +2465,56 @@ tfrVectorLayer = new ol.layer.Vector({
     zIndex: 12.5
 });
 map.addLayer(tfrVectorLayer);
+
+airmetVectorSource = new ol.source.Vector({
+    features: airmetFeatures
+});
+airmetVectorLayer = new ol.layer.Vector({
+    title: "AIRMETs",
+    source: airmetVectorSource,
+    style: airmetStyle,
+    visible: true,
+    extent: extent,
+    zIndex: 11.5
+});
+map.addLayer(airmetVectorLayer);
+
+sigmetVectorSource = new ol.source.Vector({
+    features: sigmetFeatures
+});
+sigmetVectorLayer = new ol.layer.Vector({
+    title: "SIGMETs",
+    source: sigmetVectorSource,
+    style: sigmetStyle,
+    visible: true,
+    extent: extent,
+    zIndex: 12.7
+});
+map.addLayer(sigmetVectorLayer);
+
+lightningVectorSource = new ol.source.Vector({
+    features: lightningFeatures
+});
+lightningVectorLayer = new ol.layer.Vector({
+    title: "Lightning",
+    source: lightningVectorSource,
+    style: lightningStyle,
+    visible: true,
+    extent: extent,
+    zIndex: 13
+});
+map.addLayer(lightningVectorLayer);
+
+// Strikes have no visibility change of their own to trigger a repaint, so
+// this tick forces the fade (see lightningStyle) to actually animate, and
+// drops strikes older than the display window instead of leaving them
+// invisible-but-present forever.
+setInterval(() => {
+    const cutoff = Date.now() - LIGHTNING_DISPLAY_MAX_AGE_MS;
+    const stale = lightningFeatures.getArray().filter((feature) => feature.get("time") < cutoff);
+    stale.forEach((feature) => lightningFeatures.remove(feature));
+    lightningVectorSource.changed();
+}, 10 * 1000);
 
 if (settings.useOSMonlinemap) {
     const osmOnlineTileLayer = new ol.layer.Tile({

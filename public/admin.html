@@ -6,183 +6,423 @@
   <title>METAR Board - Admin</title>
   <link rel="icon" type="image/x-icon" href="img/favicon.png"/>
   <style>
+    :root {
+      --navy: #0f2942;
+      --navy-light: #1c4569;
+      --amber: #f5a623;
+      --amber-dark: #d98c0f;
+      --green: #1a7f37;
+      --red: #c0392b;
+      --border: #e1e6ea;
+      --text: #1a2733;
+      --muted: #6b7a87;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(160deg, var(--navy) 0%, var(--navy-light) 45%, #2d6a8f 100%);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      padding: 24px 14px 48px;
+    }
+
+    .card {
+      background: #fff;
+      width: 100%;
       max-width: 480px;
-      margin: 40px auto;
-      padding: 0 16px;
+      border-radius: 18px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+      overflow: hidden;
+      align-self: flex-start;
     }
-    h1 {
+
+    .card-header {
+      background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+      color: #fff;
+      padding: 28px 26px 22px;
+      text-align: center;
+    }
+
+    .card-header svg {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 8px;
+    }
+
+    .card-header h1 {
+      margin: 0;
       font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
     }
-    label {
-      display: block;
-      margin-top: 20px;
-      font-weight: bold;
+
+    .card-header p {
+      margin: 6px 0 0;
+      font-size: 14px;
+      color: #cfe0ee;
     }
-    input[type="text"],
-    input[type="time"],
-    input[type="number"] {
-      font-size: 18px;
-      padding: 6px;
-      width: 100px;
-      margin-top: 6px;
+
+    .card-body {
+      padding: 26px;
     }
-    select {
-      font-size: 18px;
-      padding: 6px;
-      margin-top: 6px;
+
+    .section {
+      margin-bottom: 26px;
     }
-    .checkbox-row {
+
+    .section-label {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-top: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      margin-bottom: 10px;
     }
+
+    .section-label svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      color: var(--navy-light);
+    }
+
+    label.field-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      margin: 14px 0 6px;
+      color: var(--text);
+    }
+
+    label.field-label:first-child {
+      margin-top: 0;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="time"],
+    input[type="number"],
+    select {
+      font-size: 16px;
+      padding: 12px 14px;
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      background: #f8fafb;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: inherit;
+      color: var(--text);
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    input[type="time"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--navy-light);
+      box-shadow: 0 0 0 3px rgba(28, 69, 105, 0.15);
+      background: #fff;
+    }
+
+    .field-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .field-row > div {
+      flex: 1;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .checkbox-row:first-child {
+      margin-top: 0;
+    }
+
     .checkbox-row input {
-      width: 24px;
-      height: 24px;
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      accent-color: var(--navy-light);
     }
+
     .checkbox-row label {
       margin: 0;
-      font-weight: normal;
+      font-weight: 500;
+      font-size: 14px;
     }
+
     button {
-      margin-top: 28px;
-      font-size: 18px;
-      padding: 10px 24px;
+      width: 100%;
+      margin-top: 6px;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--amber) 0%, var(--amber-dark) 100%);
+      color: #2a1a00;
+      cursor: pointer;
+      transition: transform 0.08s, box-shadow 0.15s, opacity 0.15s;
+      box-shadow: 0 6px 16px rgba(217, 140, 15, 0.35);
     }
-    #status {
-      margin-top: 16px;
-      font-weight: bold;
+
+    button:active {
+      transform: translateY(1px);
     }
-    #status.error {
-      color: #b00020;
+
+    #status,
+    #loginStatus,
+    #bootstrapPasswordStatus,
+    #changePasswordStatus {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.4;
+      display: none;
     }
-    #status.success {
-      color: #1a7f37;
+
+    #status:not(:empty),
+    #loginStatus:not(:empty),
+    #bootstrapPasswordStatus:not(:empty),
+    #changePasswordStatus:not(:empty) {
+      display: block;
     }
+
+    #status.error,
+    #loginStatus.error,
+    #bootstrapPasswordStatus.error,
+    #changePasswordStatus.error {
+      background: #fdecea;
+      color: var(--red);
+    }
+
+    #status.success,
+    #bootstrapPasswordStatus.success,
+    #changePasswordStatus.success {
+      background: #eaf6ec;
+      color: var(--green);
+    }
+
     #deviceStatus {
       font-size: 13px;
-      color: #666;
-      background: #f2f2f2;
-      border-radius: 6px;
-      padding: 8px 12px;
-      margin-bottom: 8px;
+      color: var(--muted);
+      background: #f8fafb;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 22px;
     }
+
     #bootstrapPasswordSection {
       background: #fff8e6;
-      border: 1px solid #e8c766;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 20px;
+      border: 1.5px solid #e8c766;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 26px;
     }
+
     #bootstrapPasswordSection p {
       margin: 0 0 4px;
       font-size: 14px;
     }
+
     #changePasswordSection {
-      margin-top: 40px;
-      padding-top: 16px;
-      border-top: 1px solid #ddd;
+      margin-top: 4px;
+      padding-top: 22px;
+      border-top: 1px solid var(--border);
+    }
+
+    .help-text {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: var(--muted);
     }
   </style>
 </head>
 <body>
-  <h1>METAR Board Admin</h1>
+  <div class="card">
+    <div class="card-header">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/>
+      </svg>
+      <h1>METAR Board Admin</h1>
+      <p>Changes are pushed to the display immediately</p>
+    </div>
 
-  <div id="loginForm" style="display: none;">
-    <p>Enter the admin password to continue.</p>
-    <label for="loginPassword">Password</label>
-    <input type="password" id="loginPassword">
-    <button id="loginBtn">Log In</button>
-    <div id="loginStatus" class="error"></div>
-  </div>
+    <div class="card-body">
+      <div id="loginForm" style="display: none;">
+        <p class="help-text">Enter the admin password to continue.</p>
+        <label class="field-label" for="loginPassword">Password</label>
+        <input type="password" id="loginPassword">
+        <button id="loginBtn">Log In</button>
+        <div id="loginStatus" class="error"></div>
+      </div>
 
-  <div id="settingsForm" style="display: none;">
-  <p>Changes here are pushed to the display immediately - it will refresh on its own.</p>
+      <div id="settingsForm" style="display: none;">
+        <div id="deviceStatus">Loading device status...</div>
 
-  <div id="deviceStatus">Loading device status...</div>
+        <div id="bootstrapPasswordSection" style="display: none;">
+          <p><strong>No admin password is set yet</strong> - anyone on this network can currently change these settings.</p>
+          <label class="field-label" for="bootstrapPassword">Set an Admin Password</label>
+          <input type="password" id="bootstrapPassword" placeholder="At least 4 characters">
+          <button id="bootstrapPasswordBtn" type="button">Set Password</button>
+          <div id="bootstrapPasswordStatus"></div>
+        </div>
 
-  <div id="bootstrapPasswordSection" style="display: none;">
-    <p><strong>No admin password is set yet</strong> - anyone on this network can currently change these settings.</p>
-    <label for="bootstrapPassword">Set an Admin Password</label>
-    <input type="password" id="bootstrapPassword" placeholder="At least 4 characters">
-    <button id="bootstrapPasswordBtn" type="button">Set Password</button>
-    <div id="bootstrapPasswordStatus"></div>
-  </div>
+        <div class="section">
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="12" x2="12" y2="7"/>
+              <line x1="12" y1="12" x2="15.5" y2="14"/>
+            </svg>
+            Display Settings
+          </div>
 
-  <label for="homeAirport">Home Airport</label>
-  <input type="text" id="homeAirport" placeholder="e.g. KFDK">
+          <label class="field-label" for="homeAirport">Home Airport</label>
+          <input type="text" id="homeAirport" placeholder="e.g. KFDK">
 
-  <label for="favoriteAirports">Favorite Airports (comma-separated, up to 6)</label>
-  <input type="text" id="favoriteAirports" placeholder="e.g. KMRB, KEEN" style="width: 280px;">
+          <label class="field-label" for="favoriteAirports">Favorite Airports (comma-separated, up to 6)</label>
+          <input type="text" id="favoriteAirports" placeholder="e.g. KMRB, KEEN">
 
-  <label for="startupzoom">Default Zoom Level (1-20)</label>
-  <input type="number" id="startupzoom" min="1" max="20" step="1">
+          <div class="field-row">
+            <div>
+              <label class="field-label" for="startupzoom">Default Zoom (1-20)</label>
+              <input type="number" id="startupzoom" min="1" max="20" step="1">
+            </div>
+            <div>
+              <label class="field-label" for="timezone">Timezone</label>
+              <select id="timezone">
+                <option value="America/New_York">Eastern</option>
+                <option value="America/Chicago">Central</option>
+                <option value="America/Denver">Mountain</option>
+                <option value="America/Phoenix">Mountain (Arizona, no DST)</option>
+                <option value="America/Los_Angeles">Pacific</option>
+                <option value="America/Anchorage">Alaska</option>
+                <option value="Pacific/Honolulu">Hawaii</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </div>
+          </div>
+        </div>
 
-  <label for="timezone">Timezone</label>
-  <select id="timezone">
-    <option value="America/New_York">Eastern</option>
-    <option value="America/Chicago">Central</option>
-    <option value="America/Denver">Mountain</option>
-    <option value="America/Phoenix">Mountain (Arizona, no DST)</option>
-    <option value="America/Los_Angeles">Pacific</option>
-    <option value="America/Anchorage">Alaska</option>
-    <option value="Pacific/Honolulu">Hawaii</option>
-    <option value="UTC">UTC</option>
-  </select>
+        <div class="section">
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+            </svg>
+            Night Dimming
+          </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="showRadarByDefault">
-    <label for="showRadarByDefault">Show live radar by default</label>
-  </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="nightDimEnabled">
+            <label for="nightDimEnabled">Dim the display at night</label>
+          </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="useOSMonlinemap">
-    <label for="useOSMonlinemap">Show OpenStreetMap street map background (requires internet)</label>
-  </div>
+          <div id="nightDimFields" class="field-row" style="margin-top: 14px;">
+            <div>
+              <label class="field-label" for="nightDimStart">Dim from</label>
+              <input type="time" id="nightDimStart">
+            </div>
+            <div>
+              <label class="field-label" for="nightDimEnd">Until</label>
+              <input type="time" id="nightDimEnd">
+            </div>
+            <div>
+              <label class="field-label" for="nightDimOpacity">Strength (0-90%)</label>
+              <input type="number" id="nightDimOpacity" min="0" max="90" step="5">
+            </div>
+          </div>
+        </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="nightDimEnabled">
-    <label for="nightDimEnabled">Dim the display at night</label>
-  </div>
+        <div class="section">
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+              <line x1="8" y1="2" x2="8" y2="18"/>
+              <line x1="16" y1="6" x2="16" y2="22"/>
+            </svg>
+            Map Overlays
+          </div>
 
-  <div id="nightDimFields">
-    <label for="nightDimStart">Dim from</label>
-    <input type="time" id="nightDimStart">
+          <div class="checkbox-row">
+            <input type="checkbox" id="showRadarByDefault">
+            <label for="showRadarByDefault">Show live radar by default</label>
+          </div>
 
-    <label for="nightDimEnd">Until</label>
-    <input type="time" id="nightDimEnd">
+          <div class="checkbox-row">
+            <input type="checkbox" id="useOSMonlinemap">
+            <label for="useOSMonlinemap">Show OpenStreetMap street map background (requires internet)</label>
+          </div>
 
-    <label for="nightDimOpacity">Dim strength (0-90%)</label>
-    <input type="number" id="nightDimOpacity" min="0" max="90" step="5">
-  </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="showTfrOverlay">
+            <label for="showTfrOverlay">Show active TFRs (Temporary Flight Restrictions)</label>
+          </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="showTfrOverlay">
-    <label for="showTfrOverlay">Show active TFRs (Temporary Flight Restrictions)</label>
-  </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="showHomeAirspace">
+            <label for="showHomeAirspace">Show home airport's airspace boundary</label>
+          </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="showHomeAirspace">
-    <label for="showHomeAirspace">Show home airport's airspace boundary</label>
-  </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="showTraffic">
+            <label for="showTraffic">Show live ADS-B traffic</label>
+          </div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="showTraffic">
-    <label for="showTraffic">Show live ADS-B traffic</label>
-  </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="showLightning">
+            <label for="showLightning">Show recent lightning strikes</label>
+          </div>
 
-  <button id="saveBtn">Save</button>
-  <div id="status"></div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="showSigmets">
+            <label for="showSigmets">Show active SIGMETs (convective/turbulence/icing)</label>
+          </div>
 
-  <div id="changePasswordSection" style="display: none;">
-    <label for="changePassword">Change Admin Password</label>
-    <input type="password" id="changePassword" placeholder="At least 4 characters">
-    <button id="changePasswordBtn" type="button">Update Password</button>
-    <div id="changePasswordStatus"></div>
-  </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="showAirmets">
+            <label for="showAirmets">Show active AIRMETs (IFR/turbulence/icing/mountain obscuration)</label>
+          </div>
+        </div>
+
+        <button id="saveBtn">Save</button>
+        <div id="status"></div>
+
+        <div id="changePasswordSection" style="display: none;">
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="10" width="16" height="10" rx="2"/>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            </svg>
+            Admin Access
+          </div>
+          <label class="field-label" for="changePassword">Change Admin Password</label>
+          <input type="password" id="changePassword" placeholder="At least 4 characters">
+          <button id="changePasswordBtn" type="button">Update Password</button>
+          <div id="changePasswordStatus"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -199,6 +439,9 @@
     const showTfrOverlayCheckbox = document.getElementById("showTfrOverlay");
     const showHomeAirspaceCheckbox = document.getElementById("showHomeAirspace");
     const showTrafficCheckbox = document.getElementById("showTraffic");
+    const showLightningCheckbox = document.getElementById("showLightning");
+    const showSigmetsCheckbox = document.getElementById("showSigmets");
+    const showAirmetsCheckbox = document.getElementById("showAirmets");
     const saveBtn = document.getElementById("saveBtn");
     const statusEl = document.getElementById("status");
     const loginFormEl = document.getElementById("loginForm");
@@ -341,6 +584,9 @@
         showTfrOverlayCheckbox.checked = settings.showTfrOverlay !== false;
         showHomeAirspaceCheckbox.checked = settings.showHomeAirspace !== false;
         showTrafficCheckbox.checked = settings.showTraffic !== false;
+        showLightningCheckbox.checked = settings.showLightning !== false;
+        showSigmetsCheckbox.checked = settings.showSigmets !== false;
+        showAirmetsCheckbox.checked = settings.showAirmets !== false;
       })
       .catch(err => setStatus("Failed to load current settings: " + err.message, true));
 
@@ -392,7 +638,10 @@
           nightDimOpacity: nightDimOpacity,
           showTfrOverlay: showTfrOverlayCheckbox.checked,
           showHomeAirspace: showHomeAirspaceCheckbox.checked,
-          showTraffic: showTrafficCheckbox.checked
+          showTraffic: showTrafficCheckbox.checked,
+          showLightning: showLightningCheckbox.checked,
+          showSigmets: showSigmetsCheckbox.checked,
+          showAirmets: showAirmetsCheckbox.checked
         })
       })
         .then(res => {

@@ -138,6 +138,20 @@ const FAA_TFR_WFS_URL = "https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&versi
 const TFR_CACHE_TTL_MS = 15 * 60 * 1000;
 let tfrCache = { data: null, fetchedAt: 0 };
 
+// NOAA/FAA Aviation Weather Center public API - the same provider this app
+// already uses for METARs/TAFs/PIREPs, no API key required. airsigmet
+// covers domestic (CONUS) SIGMETs; gairmet is the "G-AIRMET" product that
+// replaced the old text AIRMET Sierra/Tango/Zulu bulletins in Jan 2025.
+// fore=0 on the G-AIRMET request keeps this to the currently-valid panel,
+// not the 3/6/9/12hr forecast panels - matching this app's "what's
+// happening now" framing elsewhere (radar defaults to latest frame, not
+// an animation loop).
+const AIRSIGMET_URL = "https://aviationweather.gov/api/data/airsigmet?format=geojson";
+const GAIRMET_URL = "https://aviationweather.gov/api/data/gairmet?format=geojson&fore=0";
+const SIGMET_CACHE_TTL_MS = 10 * 60 * 1000;
+let sigmetCache = { data: null, fetchedAt: 0 };
+let airmetCache = { data: null, fetchedAt: 0 };
+
 // NWS/FAA public "FD" winds-and-temperatures-aloft text product. Fixed
 // station list of ~180 major airports (not every field), so the home
 // airport's actual station is usually a nearest-neighbor match, not an
@@ -147,6 +161,79 @@ const WINDS_ALOFT_CACHE_TTL_MS = 30 * 60 * 1000;
 const WINDS_ALOFT_MAX_STATION_DISTANCE_NM = 150;
 let windsAloftCache = { data: null, fetchedAt: 0 };
 const airportCoordsByIdent = new Map();
+
+// Blitzortung.org's public non-obfuscated relay - the same feed home-
+// automation integrations (e.g. Home Assistant) use. It's a crowd-sourced
+// global lightning detection network, not an official/paid one (no API
+// key, no SLA, no terms enforcement), so this is "probably shows nearby
+// storms" not an authoritative strike log. One persistent inbound
+// connection is kept here and strikes are buffered in memory; polling
+// clients just read the current buffer via /lightning instead of each
+// opening their own feed connection.
+const BLITZORTUNG_SERVER_IDS = [1, 5, 6, 7];
+const LIGHTNING_MAX_AGE_MS = 15 * 60 * 1000;
+const LIGHTNING_RADIUS_NM = 375;
+const LIGHTNING_HARD_CAP = 5000;
+let lightningStrikes = [];
+let lightningReconnectDelayMs = 2000;
+
+function pruneLightningStrikes() {
+    const cutoff = Date.now() - LIGHTNING_MAX_AGE_MS;
+    lightningStrikes = lightningStrikes.filter((strike) => strike.time >= cutoff);
+}
+
+function connectToLightningFeed() {
+    const serverId = BLITZORTUNG_SERVER_IDS[Math.floor(Math.random() * BLITZORTUNG_SERVER_IDS.length)];
+    const socket = new WebSocket(`wss://ws${serverId}.blitzortung.org:3000/`);
+
+    socket.on('open', () => {
+        lightningReconnectDelayMs = 2000;
+        socket.send(JSON.stringify({ time: 0 }));
+    });
+
+    socket.on('message', (raw) => {
+        let strike;
+        try {
+            strike = JSON.parse(raw);
+        }
+        catch {
+            return;
+        }
+        if (typeof strike.lat !== "number" || typeof strike.lon !== "number" || typeof strike.time !== "number") return;
+
+        // Bound memory to strikes actually relevant to this device - the
+        // raw feed is worldwide and far too high-volume to buffer whole.
+        // No home airport coords resolved -> nothing to compare against,
+        // so drop everything rather than buffer the entire planet.
+        const currentSettings = loadSettings();
+        const homeCoords = airportCoordsByIdent.get(String(currentSettings.homeAirport || "").trim().toUpperCase());
+        if (!homeCoords) return;
+        if (haversineNm(homeCoords.lat, homeCoords.lon, strike.lat, strike.lon) > LIGHTNING_RADIUS_NM) return;
+
+        lightningStrikes.push({
+            lat: strike.lat,
+            lon: strike.lon,
+            time: Math.floor(strike.time / 1e6) // ns -> ms
+        });
+        if (lightningStrikes.length > LIGHTNING_HARD_CAP) {
+            pruneLightningStrikes();
+            if (lightningStrikes.length > LIGHTNING_HARD_CAP) {
+                lightningStrikes = lightningStrikes.slice(-LIGHTNING_HARD_CAP);
+            }
+        }
+    });
+
+    socket.on('close', scheduleLightningReconnect);
+    socket.on('error', (err) => {
+        console.log(`Lightning feed error (ws${serverId}): ${err.message}`);
+        socket.close();
+    });
+}
+
+function scheduleLightningReconnect() {
+    setTimeout(connectToLightningFeed, lightningReconnectDelayMs);
+    lightningReconnectDelayMs = Math.min(lightningReconnectDelayMs * 2, 60000);
+}
 
 function haversineNm(lat1, lon1, lat2, lon2) {
     const toRad = (deg) => (deg * Math.PI) / 180;
@@ -336,6 +423,9 @@ const metadatasets = new Map();
 loadDatabases();
 
 loadMetadatasets();
+
+connectToLightningFeed();
+setInterval(pruneLightningStrikes, 60 * 1000);
 
 function loadDatabases() {
     if (!Database) {
@@ -744,7 +834,10 @@ try {
         },
         showTfrOverlay: (value) => (typeof value === "boolean" ? value : undefined),
         showHomeAirspace: (value) => (typeof value === "boolean" ? value : undefined),
-        showTraffic: (value) => (typeof value === "boolean" ? value : undefined)
+        showTraffic: (value) => (typeof value === "boolean" ? value : undefined),
+        showLightning: (value) => (typeof value === "boolean" ? value : undefined),
+        showSigmets: (value) => (typeof value === "boolean" ? value : undefined),
+        showAirmets: (value) => (typeof value === "boolean" ? value : undefined)
     };
 
     app.post("/savesettings", (req, res) => {
@@ -960,6 +1053,80 @@ try {
             res.writeHead(200);
             res.end(JSON.stringify(tfrCache.data || emptyCollection));
         }
+    });
+
+    // Active domestic SIGMETs. airsigmet is a legacy combined feed that can
+    // still return IFR-hazard entries left over from before G-AIRMET
+    // existed - those are filtered out here since /airmets (below) is now
+    // the authoritative source for IFR, avoiding a double-rendered overlay.
+    app.get("/sigmets", async (req, res) => {
+        const emptyCollection = { type: "FeatureCollection", features: [] };
+
+        if (sigmetCache.data && Date.now() - sigmetCache.fetchedAt < SIGMET_CACHE_TTL_MS) {
+            res.writeHead(200);
+            res.end(JSON.stringify(sigmetCache.data));
+            return;
+        }
+
+        try {
+            const response = await fetch(AIRSIGMET_URL);
+            const geojson = await response.json();
+            const features = (geojson?.features || []).filter((feature) => {
+                return String(feature.properties?.hazard || "").toUpperCase() !== "IFR";
+            });
+
+            sigmetCache = { data: { type: "FeatureCollection", features }, fetchedAt: Date.now() };
+            res.writeHead(200);
+            res.end(JSON.stringify(sigmetCache.data));
+        }
+        catch (err) {
+            console.log("Failed to fetch SIGMETs:", err);
+            res.writeHead(200);
+            res.end(JSON.stringify(sigmetCache.data || emptyCollection));
+        }
+    });
+
+    // Current G-AIRMET hazards (turbulence, icing, IFR, mountain
+    // obscuration, low-level wind shear, surface wind, freezing level).
+    app.get("/airmets", async (req, res) => {
+        const emptyCollection = { type: "FeatureCollection", features: [] };
+
+        if (airmetCache.data && Date.now() - airmetCache.fetchedAt < SIGMET_CACHE_TTL_MS) {
+            res.writeHead(200);
+            res.end(JSON.stringify(airmetCache.data));
+            return;
+        }
+
+        try {
+            const response = await fetch(GAIRMET_URL);
+            const geojson = await response.json();
+            airmetCache = {
+                data: geojson?.type === "FeatureCollection" ? geojson : emptyCollection,
+                fetchedAt: Date.now()
+            };
+            res.writeHead(200);
+            res.end(JSON.stringify(airmetCache.data));
+        }
+        catch (err) {
+            console.log("Failed to fetch G-AIRMETs:", err);
+            res.writeHead(200);
+            res.end(JSON.stringify(airmetCache.data || emptyCollection));
+        }
+    });
+
+    // Recent lightning strikes within LIGHTNING_RADIUS_NM of the home
+    // airport, from the in-memory buffer connectToLightningFeed() fills.
+    // No fetch/cache-TTL here (unlike /tfrs) - the buffer is already kept
+    // current by the persistent upstream connection, this just reads it.
+    app.get("/lightning", (req, res) => {
+        pruneLightningStrikes();
+        const features = lightningStrikes.map((strike) => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [strike.lon, strike.lat] },
+            properties: { time: strike.time }
+        }));
+        res.writeHead(200);
+        res.end(JSON.stringify({ type: "FeatureCollection", features }));
     });
 
     // Winds/temps aloft (low altitudes only - see parseLowAltitudeWindsAloft)
