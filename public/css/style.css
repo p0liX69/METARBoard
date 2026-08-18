@@ -119,6 +119,54 @@ html, body {
     border-radius: 3px;
     flex-shrink: 0;
 }
+/* Past-12-hour altimeter/ceiling/visibility trend panel - three small
+   multiples (never one shared/dual-axis chart, since the three measures
+   have unrelated scales), non-interactive to match this kiosk having no
+   pointer input on the real display. */
+#weatherTrendBox {
+    display: none;
+    position: fixed;
+    top: 140px;
+    right: 14px;
+    background: rgba(20, 20, 20, 0.85);
+    border: 2px solid #444;
+    border-radius: 10px;
+    padding: 10px 14px;
+    z-index: 1000;
+    font-family: Arial, sans-serif;
+    color: #eee;
+    font-size: 13px;
+}
+#weatherTrendBox .weather-trend-title {
+    font-weight: bold;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    color: #aaa;
+}
+#weatherTrendBox .weather-trend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+}
+#weatherTrendBox .weather-trend-label {
+    width: 62px;
+    flex-shrink: 0;
+    color: #aaa;
+    font-size: 12px;
+}
+#weatherTrendBox .weather-trend-value {
+    width: 68px;
+    flex-shrink: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+#weatherTrendBox .weather-trend-arrow {
+    display: inline-block;
+    margin-left: 4px;
+}
 #nightDimOverlay {
     position: fixed;
     top: 0;

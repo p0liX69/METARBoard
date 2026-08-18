@@ -160,6 +160,47 @@ const WINDS_ALOFT_URL = "https://aviationweather.gov/api/data/windtemp?region=us
 const WINDS_ALOFT_CACHE_TTL_MS = 30 * 60 * 1000;
 const WINDS_ALOFT_MAX_STATION_DISTANCE_NM = 150;
 let windsAloftCache = { data: null, fetchedAt: 0 };
+
+// Past-hours METAR history for the home airport's weather trend panel -
+// same aviationweather.gov API used elsewhere, just with a station filter
+// and the "hours" lookback instead of the nationwide current-conditions
+// cache file used for the main map's METAR icons.
+const METAR_TREND_HOURS = 12;
+const METAR_TREND_CACHE_TTL_MS = 10 * 60 * 1000;
+let metarTrendCache = { icao: null, data: null, fetchedAt: 0 };
+
+/**
+ * METAR "visib" is a free-form string ("10+", "6", "3/4", "1 1/2", "M1/4")
+ * rather than a plain number - this normalizes it to statute miles,
+ * capping the "+" (unlimited-ish) case and flooring the "M" (less-than)
+ * case at the stated value since a trend chart just needs a plottable
+ * number, not the exact qualifier.
+ */
+function parseVisibilityStatuteMiles(visib) {
+    if (typeof visib === "number") return visib;
+    if (typeof visib !== "string") return null;
+    const cleaned = visib.trim().replace(/^M/, "").replace(/\+$/, "");
+    const mixedFraction = cleaned.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+    if (mixedFraction) {
+        return Number(mixedFraction[1]) + Number(mixedFraction[2]) / Number(mixedFraction[3]);
+    }
+    const fraction = cleaned.match(/^(\d+)\/(\d+)$/);
+    if (fraction) {
+        return Number(fraction[1]) / Number(fraction[2]);
+    }
+    const value = Number(cleaned);
+    return Number.isFinite(value) ? value : null;
+}
+
+/** Ceiling is the lowest broken/overcast layer - scattered/few don't count. */
+function ceilingFromClouds(clouds) {
+    if (!Array.isArray(clouds)) return null;
+    const bases = clouds
+        .filter((layer) => layer.cover === "BKN" || layer.cover === "OVC")
+        .map((layer) => layer.base)
+        .filter((base) => Number.isFinite(base));
+    return bases.length > 0 ? Math.min(...bases) : null;
+}
 const airportCoordsByIdent = new Map();
 
 // Blitzortung.org's public non-obfuscated relay - the same feed home-
@@ -845,7 +886,8 @@ try {
                 .filter((v) => /^[A-Z0-9-]{2,10}$/.test(v))
                 .slice(0, 50);
             return tails;
-        }
+        },
+        showWeatherTrend: (value) => (typeof value === "boolean" ? value : undefined)
     };
 
     app.post("/savesettings", (req, res) => {
@@ -1198,6 +1240,55 @@ try {
             console.log("Failed to fetch winds aloft:", err);
             res.writeHead(200);
             res.end(JSON.stringify(empty));
+        }
+    });
+
+    // Past METAR_TREND_HOURS of observations for the home airport, reduced
+    // to the three fields the trend panel plots - altimeter, ceiling,
+    // visibility - so a flat/falling/rising trend is visible without
+    // needing to re-read raw METAR text for each of the last several
+    // observations.
+    app.get("/metartrend", async (req, res) => {
+        const empty = { station: null, observations: [] };
+        const currentSettings = loadSettings();
+        const homeIdent = String(currentSettings.homeAirport || "").trim().toUpperCase();
+
+        if (!homeIdent) {
+            res.writeHead(200);
+            res.end(JSON.stringify(empty));
+            return;
+        }
+
+        try {
+            const isCacheFresh = metarTrendCache.icao === homeIdent
+                && metarTrendCache.data
+                && Date.now() - metarTrendCache.fetchedAt < METAR_TREND_CACHE_TTL_MS;
+
+            if (!isCacheFresh) {
+                const params = new URLSearchParams({ ids: homeIdent, format: "json", hours: METAR_TREND_HOURS });
+                const response = await fetch(`https://aviationweather.gov/api/data/metar?${params}`);
+                const raw = await response.json();
+
+                const observations = (Array.isArray(raw) ? raw : [])
+                    .map((ob) => ({
+                        time: ob.obsTime * 1000,
+                        altimeterInHg: Number.isFinite(ob.altim) ? ob.altim * 0.0295299830714 : null,
+                        visibilitySm: parseVisibilityStatuteMiles(ob.visib),
+                        ceilingFt: ceilingFromClouds(ob.clouds)
+                    }))
+                    .filter((ob) => Number.isFinite(ob.time))
+                    .sort((a, b) => a.time - b.time);
+
+                metarTrendCache = { icao: homeIdent, data: { station: homeIdent, observations }, fetchedAt: Date.now() };
+            }
+
+            res.writeHead(200);
+            res.end(JSON.stringify(metarTrendCache.data));
+        }
+        catch (err) {
+            console.log("Failed to fetch METAR trend:", err);
+            res.writeHead(200);
+            res.end(JSON.stringify(metarTrendCache.data || empty));
         }
     });
 

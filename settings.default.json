@@ -9,6 +9,7 @@
     "timezone": "America/New_York",
     "favoriteAirports": [],
     "fleetAircraft": [],
+    "showWeatherTrend": true,
     "nightDimEnabled": false,
     "nightDimStart": "22:00",
     "nightDimEnd": "06:00",

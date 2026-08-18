@@ -403,6 +403,11 @@
             <input type="checkbox" id="showAirmets">
             <label for="showAirmets">Show active AIRMETs (IFR/turbulence/icing/mountain obscuration)</label>
           </div>
+
+          <div class="checkbox-row">
+            <input type="checkbox" id="showWeatherTrend">
+            <label for="showWeatherTrend">Show past-12-hour weather trend panel</label>
+          </div>
         </div>
 
         <div class="section">
@@ -454,6 +459,7 @@
     const showLightningCheckbox = document.getElementById("showLightning");
     const showSigmetsCheckbox = document.getElementById("showSigmets");
     const showAirmetsCheckbox = document.getElementById("showAirmets");
+    const showWeatherTrendCheckbox = document.getElementById("showWeatherTrend");
     const fleetAircraftInput = document.getElementById("fleetAircraft");
     const saveBtn = document.getElementById("saveBtn");
     const statusEl = document.getElementById("status");
@@ -600,6 +606,7 @@
         showLightningCheckbox.checked = settings.showLightning !== false;
         showSigmetsCheckbox.checked = settings.showSigmets !== false;
         showAirmetsCheckbox.checked = settings.showAirmets !== false;
+        showWeatherTrendCheckbox.checked = settings.showWeatherTrend !== false;
         fleetAircraftInput.value = (settings.fleetAircraft || []).join(", ");
       })
       .catch(err => setStatus("Failed to load current settings: " + err.message, true));
@@ -669,6 +676,7 @@
           showLightning: showLightningCheckbox.checked,
           showSigmets: showSigmetsCheckbox.checked,
           showAirmets: showAirmetsCheckbox.checked,
+          showWeatherTrend: showWeatherTrendCheckbox.checked,
           fleetAircraft: fleetAircraft
         })
       })

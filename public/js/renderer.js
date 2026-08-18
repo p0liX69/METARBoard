@@ -102,6 +102,121 @@ function renderWindsAloftPanel(data) {
     `;
 }
 
+const WEATHER_TREND_REFRESH_MS = 10 * 60 * 1000;
+const WEATHER_TREND_LINE_COLOR = '190, 225, 255';
+
+/**
+ * A single small-multiple sparkline (own scale, no shared/dual axis - the
+ * three metrics this panel plots have unrelated units and ranges). Thin
+ * 2px line, a filled dot anchoring the latest value, no gridlines/axis -
+ * this kiosk has no pointer input on the real display so there's no
+ * hover layer, and the numeric current value is direct-labeled in the
+ * row's text rather than repeated at every point.
+ */
+function buildSparklineSvg(points, width, height) {
+    if (points.length < 2) return '<span style="color:#666;font-size:11px">not enough data</span>';
+
+    const values = points.map((p) => p.value);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const valueRange = maxValue - minValue || 1;
+    const minTime = points[0].time;
+    const maxTime = points[points.length - 1].time;
+    const timeRange = maxTime - minTime || 1;
+
+    const padding = 3;
+    const toX = (t) => padding + ((t - minTime) / timeRange) * (width - padding * 2);
+    const toY = (v) => height - padding - ((v - minValue) / valueRange) * (height - padding * 2);
+
+    const coords = points.map((p) => `${toX(p.time).toFixed(1)},${toY(p.value).toFixed(1)}`);
+    const last = points[points.length - 1];
+
+    return `
+        <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+            <polyline points="${coords.join(' ')}" fill="none"
+                stroke="rgba(${WEATHER_TREND_LINE_COLOR}, 0.9)" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" />
+            <circle cx="${toX(last.time).toFixed(1)}" cy="${toY(last.value).toFixed(1)}" r="2.5"
+                fill="rgba(${WEATHER_TREND_LINE_COLOR}, 1)" />
+        </svg>
+    `;
+}
+
+/** Up/down/flat arrow, latest value vs. the earliest value in the window - a dead zone avoids flagging noise as a trend. */
+function trendArrow(points, flatThreshold) {
+    if (points.length < 2) return "";
+    const delta = points[points.length - 1].value - points[0].value;
+    if (Math.abs(delta) < flatThreshold) return '<span class="weather-trend-arrow" style="color:#999">&#9654;</span>';
+    return delta > 0
+        ? '<span class="weather-trend-arrow" style="color:#7CFC00">&#9650;</span>'
+        : '<span class="weather-trend-arrow" style="color:#ff8080">&#9660;</span>';
+}
+
+function weatherTrendRow(label, points, formatValue, flatThreshold) {
+    const last = points.length > 0 ? points[points.length - 1] : null;
+    const valueText = last ? formatValue(last.value) : "--";
+    return `
+        <div class="weather-trend-row">
+            <span class="weather-trend-label">${label}</span>
+            ${buildSparklineSvg(points, 90, 26)}
+            <span class="weather-trend-value">${valueText}${trendArrow(points, flatThreshold)}</span>
+        </div>
+    `;
+}
+
+function renderWeatherTrendPanel(data) {
+    if (settings && settings.showWeatherTrend === false) {
+        weatherTrendBox.style.display = "none";
+        return;
+    }
+
+    const observations = data?.observations || [];
+    if (observations.length < 2) {
+        weatherTrendBox.style.display = "none";
+        return;
+    }
+
+    const altimeterPoints = observations
+        .filter((ob) => Number.isFinite(ob.altimeterInHg))
+        .map((ob) => ({ time: ob.time, value: ob.altimeterInHg }));
+    const ceilingPoints = observations
+        .filter((ob) => Number.isFinite(ob.ceilingFt))
+        .map((ob) => ({ time: ob.time, value: ob.ceilingFt }));
+    const visibilityPoints = observations
+        .filter((ob) => Number.isFinite(ob.visibilitySm))
+        .map((ob) => ({ time: ob.time, value: ob.visibilitySm }));
+
+    // A clear sky (no BKN/OVC layer at all in the window) means "no
+    // ceiling to plot" - that's a real, common, good-weather state, not
+    // missing data, so it gets its own row instead of the sparkline's
+    // generic "not enough data" placeholder.
+    const ceilingRow = ceilingPoints.length > 0
+        ? weatherTrendRow("Ceiling", ceilingPoints, (v) => Math.round(v).toLocaleString() + "ft", 200)
+        : `<div class="weather-trend-row">
+               <span class="weather-trend-label">Ceiling</span>
+               <span style="color:#999;font-size:12px">Unlimited (clear)</span>
+           </div>`;
+
+    weatherTrendBox.style.display = "block";
+    weatherTrendBox.innerHTML = `
+        <div class="weather-trend-title">${escapeHtml(data.station)} - 12hr Trend</div>
+        ${weatherTrendRow("Altimeter", altimeterPoints, (v) => v.toFixed(2) + '"', 0.02)}
+        ${ceilingRow}
+        ${weatherTrendRow("Visibility", visibilityPoints, (v) => v.toFixed(0) + "sm", 0.5)}
+    `;
+}
+
+async function fetchWeatherTrend() {
+    try {
+        const response = await fetch(URL_GET_METAR_TREND);
+        const data = await response.json();
+        renderWeatherTrendPanel(data);
+    }
+    catch (err) {
+        console.log("Failed to load weather trend:", err);
+    }
+}
+
 const TFR_REFRESH_MS = 15 * 60 * 1000;
 
 /**
@@ -315,6 +430,7 @@ let URL_GET_LIGHTNING       = `${URL_SERVER}/lightning`;
 let URL_GET_SIGMETS         = `${URL_SERVER}/sigmets`;
 let URL_GET_AIRMETS         = `${URL_SERVER}/airmets`;
 let URL_GET_WINDS_ALOFT     = `${URL_SERVER}/windsaloft`;
+let URL_GET_METAR_TREND     = `${URL_SERVER}/metartrend`;
 
 let deg = 0;
 let alt = 0;
@@ -546,6 +662,12 @@ document.body.appendChild(sunPanel);
 const hazardLegend = document.createElement("div");
 hazardLegend.id = "hazardLegend";
 document.body.appendChild(hazardLegend);
+
+// Past-12-hour weather trend panel, below the Zulu clock (mirrors the
+// hazard legend's placement below the local clock on the other side).
+const weatherTrendBox = document.createElement("div");
+weatherTrendBox.id = "weatherTrendBox";
+document.body.appendChild(weatherTrendBox);
 
 /**
  * NOAA's standard solar position formulas (equation of time + solar
@@ -808,6 +930,9 @@ async function loadInitialData() {
 
         fetchAirmets();
         setInterval(fetchAirmets, SIGMET_REFRESH_MS);
+
+        fetchWeatherTrend();
+        setInterval(fetchWeatherTrend, WEATHER_TREND_REFRESH_MS);
     }
     catch (err) {
         console.log(err);
@@ -2175,35 +2300,6 @@ function processTraffic() {
                 })
             ]);
             trafficFeatures.push(trafficFeature);
-
-            // ForeFlight-style trend vector: a line showing where this
-            // aircraft will be in ~60 seconds at its current track/speed.
-            if (Number.isFinite(item.Speed) && item.Speed > 0) {
-                const speedMetersPerSec = item.Speed * 0.514444; // knots -> m/s
-                const vectorLengthMeters = speedMetersPerSec * 60;
-                const endCoord = [
-                    coord[0] + vectorLengthMeters * Math.sin(tradians),
-                    coord[1] + vectorLengthMeters * Math.cos(tradians)
-                ];
-                const vectorFeature = new ol.Feature({
-                    geometry: new ol.geom.LineString([coord, endCoord]),
-                    datatype: "traffic-vector"
-                });
-                vectorFeature.setStyle([
-                    // Black outline first so the line reads against any
-                    // chart color, same treatment as the icon outline.
-                    // Matches the icon's own color (cyan/red/magenta) so a
-                    // military or fleet aircraft's trend line is tagged
-                    // the same way as its icon, not left the old default.
-                    new ol.style.Style({
-                        stroke: new ol.style.Stroke({ color: '#000000', width: 4 })
-                    }),
-                    new ol.style.Style({
-                        stroke: new ol.style.Stroke({ color: iconColor, width: 2 })
-                    })
-                ]);
-                trafficFeatures.push(vectorFeature);
-            }
         }
         catch (err) {
             // Isolate one malformed entry from the rest of the rebuild -
