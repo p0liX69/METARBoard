@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>METAR Board - Fleet Status</title>
+  <style>
+    :root {
+      --navy: #0f2942;
+      --navy-light: #1c4569;
+      --amber: #f5a623;
+      --green: #1a7f37;
+      --red: #c0392b;
+      --muted: #6b7a87;
+      --border: #e1e6ea;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      background: #f4f6f8;
+      color: #1a2733;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1000px;
+      margin: 0 auto 20px;
+    }
+    h1 {
+      font-size: 22px;
+      margin: 0;
+      color: var(--navy);
+    }
+    .header p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .add-device {
+      max-width: 1000px;
+      margin: 0 auto 20px;
+      display: flex;
+      gap: 8px;
+    }
+    .add-device input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .add-device button {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 8px;
+      background: var(--navy);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #deviceGrid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .device-card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+      position: relative;
+    }
+    .device-card.offline {
+      opacity: 0.6;
+    }
+    .device-ip {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--navy);
+    }
+    .device-remove {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .status-dot.online { background: var(--green); }
+    .status-dot.offline { background: var(--red); }
+    .device-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 4px 0;
+      border-top: 1px solid #f0f0f0;
+    }
+    .device-row span:first-child {
+      color: var(--muted);
+    }
+    .device-row span:last-child {
+      font-weight: 600;
+      text-align: right;
+    }
+    #lastRefresh {
+      max-width: 1000px;
+      margin: 16px auto 0;
+      text-align: right;
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>METAR Board - Fleet Status</h1>
+      <p>Runs entirely in your browser - polls each device directly, nothing hosted.</p>
+    </div>
+  </div>
+
+  <div class="add-device">
+    <input type="text" id="newDeviceInput" placeholder="Device IP or hostname, e.g. 192.168.9.189">
+    <button id="addDeviceBtn">Add</button>
+  </div>
+
+  <div id="deviceGrid"></div>
+  <div id="lastRefresh"></div>
+
+  <script>
+    const STORAGE_KEY = "metarboard_fleet_devices";
+    const REFRESH_MS = 20000;
+
+    function getDevices() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      } catch { return []; }
+    }
+
+    function saveDevices(devices) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(devices));
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderCard(host, data) {
+      const online = !!data;
+      const health = data?.health;
+      const update = data?.update;
+      return `
+        <div class="device-card ${online ? '' : 'offline'}" data-host="${escapeHtml(host)}">
+          <button class="device-remove" data-remove="${escapeHtml(host)}">Remove</button>
+          <div class="device-ip"><span class="status-dot ${online ? 'online' : 'offline'}"></span>${escapeHtml(host)}</div>
+          ${online ? `
+            <div class="device-row"><span>Status</span><span>${health?.status === 'ok' ? 'Healthy' : 'Unhealthy'}</span></div>
+            <div class="device-row"><span>Version</span><span>${escapeHtml(update?.version || 'unknown')}</span></div>
+            <div class="device-row"><span>Last update check</span><span>${escapeHtml(update?.status || 'unknown')}</span></div>
+            <div class="device-row"><span>Charts loaded</span><span>${health?.chartsLoaded ? 'Yes' : 'No'}</span></div>
+            <div class="device-row"><span>Aircraft DB</span><span>${health?.aircraftDbOpen ? 'Yes' : 'No'}</span></div>
+          ` : `<div class="device-row"><span>Unreachable</span><span>-</span></div>`}
+        </div>
+      `;
+    }
+
+    async function pollDevice(host) {
+      const base = `http://${host}:8500`;
+      try {
+        const [healthRes, updateRes] = await Promise.all([
+          fetch(`${base}/health`, { cache: 'no-store' }),
+          fetch(`${base}/updatestatus`, { cache: 'no-store' })
+        ]);
+        const health = await healthRes.json();
+        const update = await updateRes.json();
+        return { health, update };
+      }
+      catch (err) {
+        return null;
+      }
+    }
+
+    async function refreshAll() {
+      const devices = getDevices();
+      const grid = document.getElementById("deviceGrid");
+      if (!devices.length) {
+        grid.innerHTML = "<p style='color:#6b7a87;'>No devices added yet - add one above (IP address, no need for http:// or the port).</p>";
+        return;
+      }
+
+      const results = await Promise.all(devices.map((host) => pollDevice(host)));
+      grid.innerHTML = devices.map((host, i) => renderCard(host, results[i])).join("");
+
+      grid.querySelectorAll("[data-remove]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const remaining = getDevices().filter((h) => h !== btn.dataset.remove);
+          saveDevices(remaining);
+          refreshAll();
+        });
+      });
+
+      document.getElementById("lastRefresh").textContent =
+        `Last checked: ${new Date().toLocaleTimeString()}`;
+    }
+
+    document.getElementById("addDeviceBtn").addEventListener("click", () => {
+      const input = document.getElementById("newDeviceInput");
+      const host = input.value.trim().replace(/^https?:\/\//, "").replace(/:.*$/, "");
+      if (!host) return;
+      const devices = getDevices();
+      if (!devices.includes(host)) {
+        devices.push(host);
+        saveDevices(devices);
+      }
+      input.value = "";
+      refreshAll();
+    });
+
+    document.getElementById("newDeviceInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("addDeviceBtn").click();
+    });
+
+    refreshAll();
+    setInterval(refreshAll, REFRESH_MS);
+  </script>
+</body>
+</html>
