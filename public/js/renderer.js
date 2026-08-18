@@ -2127,19 +2127,24 @@ function processTraffic() {
             const icon = getTrafficIcon(item.Icao_addr);
             const iconColor = isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#ffcc00';
             trafficFeature.setStyle([
-                // A same-shape black copy, slightly larger, rendered behind
-                // the colored icon - reads as an outline that follows the
-                // actual silhouette instead of a plain circular halo, and
-                // is what makes the icon read against light chart terrain.
-                new ol.style.Style({
+                // A ring of same-shape, same-size black copies nudged a
+                // couple pixels in each direction, rendered behind the
+                // colored icon - reads as a uniform outline that follows
+                // the actual silhouette. A single larger black copy
+                // (tried first) scales up radially from the icon's
+                // center, so it left thin extremities like wingtips and
+                // tails buried in a disproportionately thick black smear
+                // while the fuselage barely got an outline at all.
+                ...TRAFFIC_OUTLINE_OFFSETS.map((displacement) => new ol.style.Style({
                     image: new ol.style.Icon({
                         src: icon.src,
                         crossOrigin: 'anonymous',
-                        scale: icon.scale * 1.22,
+                        scale: icon.scale,
                         rotation: tradians,
+                        displacement,
                         color: '#000000'
                     })
-                }),
+                })),
                 new ol.style.Style({
                     image: new ol.style.Icon({
                         src: icon.src,
@@ -2893,6 +2898,17 @@ function fetchAircraftInfo(icao24List) {
  * scale would otherwise render some categories 2-3x larger than others.
  */
 const TRAFFIC_ICON_TARGET_PX = 42;
+
+// Pixel displacements (screen-space, applied after the icon's own
+// rotation) for the black-outline copies in processTraffic - 8 points
+// around a small ring gives an even outline in every direction without
+// the gaps a 4-point N/S/E/W-only ring leaves on the diagonals.
+const TRAFFIC_OUTLINE_RADIUS_PX = 1.6;
+const TRAFFIC_OUTLINE_OFFSETS = Array.from({ length: 8 }, (_, i) => {
+    const angle = (i / 8) * 2 * Math.PI;
+    return [Math.cos(angle) * TRAFFIC_OUTLINE_RADIUS_PX, Math.sin(angle) * TRAFFIC_OUTLINE_RADIUS_PX];
+});
+
 const TRAFFIC_ICON_BY_CATEGORY = {
     unknown: { file: "traffic-unknown.svg", nativePx: 200 },
     helicopter: { file: "traffic-helicopter.svg", nativePx: 200 },
