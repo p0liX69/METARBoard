@@ -650,7 +650,10 @@ try {
         nightDimOpacity: (value) => {
             const opacity = Number(value);
             return Number.isInteger(opacity) && opacity >= 0 && opacity <= 90 ? opacity : undefined;
-        }
+        },
+        showTfrOverlay: (value) => (typeof value === "boolean" ? value : undefined),
+        showHomeAirspace: (value) => (typeof value === "boolean" ? value : undefined),
+        showTraffic: (value) => (typeof value === "boolean" ? value : undefined)
     };
 
     app.post("/savesettings", (req, res) => {

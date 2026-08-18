@@ -38,6 +38,7 @@ function updateVisibleCharts() {
  */
 async function fetchHomeAirspace(icao) {
     if (!icao || homeAirspaceIcaoFetched === icao) return;
+    if (settings && settings.showHomeAirspace === false) return;
     homeAirspaceIcaoFetched = icao;
 
     try {
@@ -110,6 +111,11 @@ const TFR_REFRESH_MS = 15 * 60 * 1000;
  * go throughout the day.
  */
 async function fetchTfrs() {
+    if (settings && settings.showTfrOverlay === false) {
+        tfrFeatures.clear();
+        return;
+    }
+
     try {
         const response = await fetch(URL_GET_TFRS);
         const geojson = await response.json();
@@ -2488,6 +2494,12 @@ setInterval(() => {
 }, 5 * 60 * 1000); // every 5 minutes
 
 setInterval(() => {
+    if (settings && settings.showTraffic === false) {
+        trafficMap.clear();
+        processTraffic();
+        return;
+    }
+
     const bounds = map.getView().calculateExtent(map.getSize());
     const [minX, minY, maxX, maxY] = ol.proj.transformExtent(bounds, 'EPSG:3857', 'EPSG:4326');
 

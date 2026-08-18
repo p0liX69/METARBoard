@@ -125,6 +125,21 @@
     <input type="number" id="nightDimOpacity" min="0" max="90" step="5">
   </div>
 
+  <div class="checkbox-row">
+    <input type="checkbox" id="showTfrOverlay">
+    <label for="showTfrOverlay">Show active TFRs (Temporary Flight Restrictions)</label>
+  </div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="showHomeAirspace">
+    <label for="showHomeAirspace">Show home airport's airspace boundary</label>
+  </div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="showTraffic">
+    <label for="showTraffic">Show live ADS-B traffic</label>
+  </div>
+
   <button id="saveBtn">Save</button>
   <div id="status"></div>
 
@@ -139,6 +154,9 @@
     const nightDimStartInput = document.getElementById("nightDimStart");
     const nightDimEndInput = document.getElementById("nightDimEnd");
     const nightDimOpacityInput = document.getElementById("nightDimOpacity");
+    const showTfrOverlayCheckbox = document.getElementById("showTfrOverlay");
+    const showHomeAirspaceCheckbox = document.getElementById("showHomeAirspace");
+    const showTrafficCheckbox = document.getElementById("showTraffic");
     const saveBtn = document.getElementById("saveBtn");
     const statusEl = document.getElementById("status");
 
@@ -172,6 +190,9 @@
         nightDimStartInput.value = settings.nightDimStart || "22:00";
         nightDimEndInput.value = settings.nightDimEnd || "06:00";
         nightDimOpacityInput.value = settings.nightDimOpacity ?? 70;
+        showTfrOverlayCheckbox.checked = settings.showTfrOverlay !== false;
+        showHomeAirspaceCheckbox.checked = settings.showHomeAirspace !== false;
+        showTrafficCheckbox.checked = settings.showTraffic !== false;
       })
       .catch(err => setStatus("Failed to load current settings: " + err.message, true));
 
@@ -220,7 +241,10 @@
           nightDimEnabled: nightDimEnabledCheckbox.checked,
           nightDimStart: nightDimStartInput.value,
           nightDimEnd: nightDimEndInput.value,
-          nightDimOpacity: nightDimOpacity
+          nightDimOpacity: nightDimOpacity,
+          showTfrOverlay: showTfrOverlayCheckbox.checked,
+          showHomeAirspace: showHomeAirspaceCheckbox.checked,
+          showTraffic: showTrafficCheckbox.checked
         })
       })
         .then(res => {
