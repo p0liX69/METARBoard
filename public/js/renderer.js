@@ -2893,13 +2893,21 @@ function fetchAircraftInfo(icao24List) {
  * Icons are ADS-B Radar's free ICAO-emitter-category SVG set
  * (https://adsb-radar.com/help/icons.html, free for commercial use with
  * attribution - see the map's attribution control) rather than hand-drawn
- * shapes, so real aircraft silhouettes are recognizable at a glance.
- * Each source file has a different native size (200px for the ADS-B
- * Radar exports, ~512-683px for the standalone Cessna/regional-jet/
- * turboprop ones), hence the paired scale value - a single fixed OL Icon
- * scale would otherwise render some categories 2-3x larger than others.
+ * shapes, so real aircraft silhouettes are recognizable at a glance. The
+ * source files varied wildly in how much of their declared viewBox the
+ * actual silhouette filled (one - the Cessna - even had a viewBox smaller
+ * than its own path data, silently clipping part of the aircraft), which
+ * made a single fixed OL Icon scale render some categories 2-3x bigger
+ * than others. Fixed at the source: every traffic-*.svg's viewBox is
+ * normalized to be tightly centered on its actual content with the same
+ * ~9% margin, and width/height are all declared as 200 regardless of the
+ * original file's internal coordinate scale - so every icon now reports
+ * an identical 200x200 natural size and a single shared scale factor
+ * produces genuinely consistent on-screen sizing.
  */
 const TRAFFIC_ICON_TARGET_PX = 52;
+const TRAFFIC_ICON_NATIVE_PX = 200;
+const TRAFFIC_ICON_SCALE = TRAFFIC_ICON_TARGET_PX / TRAFFIC_ICON_NATIVE_PX;
 
 // Pixel displacements (screen-space, applied after the icon's own
 // rotation) for the black-outline copies in processTraffic - 8 points
@@ -2912,17 +2920,17 @@ const TRAFFIC_OUTLINE_OFFSETS = Array.from({ length: 8 }, (_, i) => {
 });
 
 const TRAFFIC_ICON_BY_CATEGORY = {
-    unknown: { file: "traffic-unknown.svg", nativePx: 200 },
-    helicopter: { file: "traffic-helicopter.svg", nativePx: 200 },
-    jet: { file: "traffic-jet.svg", nativePx: 512 },
-    turbopropMulti: { file: "traffic-turboprop-multi.svg", nativePx: 512 },
-    turbopropSingle: { file: "traffic-turboprop-single.svg", nativePx: 200 },
-    pistonMulti: { file: "traffic-multi-prop.svg", nativePx: 200 },
-    pistonSingle: { file: "traffic-ga-single.svg", nativePx: 682.667 }
+    unknown: "traffic-unknown.svg",
+    helicopter: "traffic-helicopter.svg",
+    jet: "traffic-jet.svg",
+    turbopropMulti: "traffic-turboprop-multi.svg",
+    turbopropSingle: "traffic-turboprop-single.svg",
+    pistonMulti: "traffic-multi-prop.svg",
+    pistonSingle: "traffic-ga-single.svg"
 };
 
-function trafficIconInfo(icon) {
-    return { src: `${URL_SERVER}/img/${icon.file}`, scale: TRAFFIC_ICON_TARGET_PX / icon.nativePx };
+function trafficIconInfo(file) {
+    return { src: `${URL_SERVER}/img/${file}`, scale: TRAFFIC_ICON_SCALE };
 }
 
 /**
