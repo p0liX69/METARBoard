@@ -628,9 +628,16 @@ function updateSunPanel() {
         ? `Sunset in ${formatMinutesUntil(sunsetMinutes, nowUtcMinutes)}`
         : `Sunrise in ${formatMinutesUntil(sunriseMinutes, nowUtcMinutes)}`;
 
+    // Inline SVGs instead of emoji (☀/🌙) - this kiosk's Chromium install
+    // has no color-emoji font, so the moon emoji specifically rendered as
+    // an empty "missing glyph" box. currentColor picks up the panel's own
+    // amber text color automatically.
+    const sunIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="14" height="14" style="vertical-align:-2px"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>';
+    const moonIcon = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style="vertical-align:-2px"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>';
+
     sunPanel.style.display = "block";
     sunPanel.innerHTML = `
-        <div class="sun-times">☀ ${utcMinutesToLocalString(sunriseMinutes)} &nbsp;|&nbsp; ${utcMinutesToLocalString(sunsetMinutes)} 🌙</div>
+        <div class="sun-times">${sunIcon} ${utcMinutesToLocalString(sunriseMinutes)} &nbsp;|&nbsp; ${utcMinutesToLocalString(sunsetMinutes)} ${moonIcon}</div>
         <div class="sun-countdown">${countdownLabel}</div>
     `;
 }
