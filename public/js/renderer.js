@@ -2899,13 +2899,13 @@ function fetchAircraftInfo(icao24List) {
  * turboprop ones), hence the paired scale value - a single fixed OL Icon
  * scale would otherwise render some categories 2-3x larger than others.
  */
-const TRAFFIC_ICON_TARGET_PX = 60;
+const TRAFFIC_ICON_TARGET_PX = 52;
 
 // Pixel displacements (screen-space, applied after the icon's own
 // rotation) for the black-outline copies in processTraffic - 8 points
 // around a small ring gives an even outline in every direction without
 // the gaps a 4-point N/S/E/W-only ring leaves on the diagonals.
-const TRAFFIC_OUTLINE_RADIUS_PX = 4;
+const TRAFFIC_OUTLINE_RADIUS_PX = 3.5;
 const TRAFFIC_OUTLINE_OFFSETS = Array.from({ length: 8 }, (_, i) => {
     const angle = (i / 8) * 2 * Math.PI;
     return [Math.cos(angle) * TRAFFIC_OUTLINE_RADIUS_PX, Math.sin(angle) * TRAFFIC_OUTLINE_RADIUS_PX];
