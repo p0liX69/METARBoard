@@ -2132,7 +2132,9 @@ function processTraffic() {
                 traffic: item
             });
             const icon = getTrafficIcon(item.Icao_addr);
-            const iconColor = isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#00e5ff';
+            const iconColor = isMilitaryAircraft(item.Icao_addr)
+                ? '#ff2222'
+                : isFleetAircraft(item.Icao_addr) ? '#ff1493' : '#00e5ff';
             trafficFeature.setStyle([
                 // A ring of same-shape, same-size black copies nudged a
                 // couple pixels in each direction, rendered behind the
@@ -2165,9 +2167,9 @@ function processTraffic() {
                         // chosen to have minimal overlap with the
                         // sectional chart's own yellow/tan/olive/blue
                         // palette (yellow and blue were both tried and
-                        // blended in too easily), military is the only
-                        // thing called out
-                        // in red.
+                        // blended in too easily), military is called out
+                        // in red, and the school's own fleet (if
+                        // configured via /admin) in magenta.
                         color: iconColor
                     })
                 })
@@ -2976,6 +2978,17 @@ function isMilitaryAircraft(icao24) {
     if (!operator) return false;
     const upper = operator.toUpperCase();
     return MILITARY_OPERATOR_KEYWORDS.some((keyword) => upper.includes(keyword));
+}
+
+// Matches against the school's own tail numbers (settings.fleetAircraft,
+// set via /admin) by registration - the same aircraft.db lookup used for
+// icon shape/operator, not a separate data source.
+function isFleetAircraft(icao24) {
+    const fleetTails = settings?.fleetAircraft;
+    if (!fleetTails || fleetTails.length === 0) return false;
+    const registration = aircraftInfoCache.get((icao24 || "").toLowerCase())?.registration;
+    if (!registration) return false;
+    return fleetTails.includes(registration.trim().toUpperCase());
 }
 
 /**

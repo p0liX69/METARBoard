@@ -837,7 +837,15 @@ try {
         showTraffic: (value) => (typeof value === "boolean" ? value : undefined),
         showLightning: (value) => (typeof value === "boolean" ? value : undefined),
         showSigmets: (value) => (typeof value === "boolean" ? value : undefined),
-        showAirmets: (value) => (typeof value === "boolean" ? value : undefined)
+        showAirmets: (value) => (typeof value === "boolean" ? value : undefined),
+        fleetAircraft: (value) => {
+            if (!Array.isArray(value)) return undefined;
+            const tails = value
+                .map((v) => String(v || "").trim().toUpperCase())
+                .filter((v) => /^[A-Z0-9-]{2,10}$/.test(v))
+                .slice(0, 50);
+            return tails;
+        }
     };
 
     app.post("/savesettings", (req, res) => {
