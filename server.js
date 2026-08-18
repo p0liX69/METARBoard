@@ -4,6 +4,7 @@ const cors = require('cors');
 const url = require('url');
 const fs = require("fs");
 const { execFile } = require("child_process");
+const crypto = require("crypto");
 const WebSocket = require('ws');
 const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const { XMLParser } = require('fast-xml-parser');
@@ -418,6 +419,86 @@ try {
         res.sendFile(`${__dirname}/public/admin.html`);
     });
 
+    // Lightweight session auth for /admin - a device that went through
+    // the setup wizard already has an admin password set; a device
+    // provisioned before this feature existed has none yet, and stays
+    // open (isAdminAuthed() returns true) until one is set via
+    // /admin/set-password - the bootstrap path for devices with no
+    // keyboard and no way to type an initial password otherwise.
+    // Sessions are in-memory only (a service restart just means logging
+    // in again - acceptable friction for a LAN device) and don't need
+    // a cookie-parsing dependency for something this simple.
+    let adminSessions = new Set();
+
+    function getCookie(req, name) {
+        const header = req.headers.cookie || "";
+        const match = header.split(";").map((c) => c.trim()).find((c) => c.startsWith(`${name}=`));
+        return match ? match.slice(name.length + 1) : null;
+    }
+
+    function hashPassword(password) {
+        return crypto.createHash("sha256").update(password).digest("hex");
+    }
+
+    function isAdminAuthed(req) {
+        const currentSettings = loadSettings();
+        if (!currentSettings.adminPasswordHash) return true;
+        const token = getCookie(req, "metarboard_admin");
+        return !!(token && adminSessions.has(token));
+    }
+
+    function startAdminSession(res) {
+        const token = crypto.randomBytes(24).toString("hex");
+        adminSessions.add(token);
+        res.setHeader("Set-Cookie", `metarboard_admin=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`);
+    }
+
+    app.get('/admin/session', (req, res) => {
+        const currentSettings = loadSettings();
+        res.writeHead(200);
+        res.end(JSON.stringify({
+            passwordSet: !!currentSettings.adminPasswordHash,
+            authed: isAdminAuthed(req)
+        }));
+    });
+
+    app.post('/admin/login', (req, res) => {
+        const currentSettings = loadSettings();
+        const password = String(req.body?.password || "");
+        if (!currentSettings.adminPasswordHash || hashPassword(password) !== currentSettings.adminPasswordHash) {
+            res.writeHead(401);
+            res.end(JSON.stringify({ error: "Incorrect password" }));
+            return;
+        }
+        startAdminSession(res);
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true }));
+    });
+
+    // Allowed with no auth ONLY when no password is set yet (first-time
+    // bootstrap on a device that never went through the setup wizard);
+    // once one exists, changing it requires an authenticated session.
+    app.post('/admin/set-password', (req, res) => {
+        const currentSettings = loadSettings();
+        if (currentSettings.adminPasswordHash && !isAdminAuthed(req)) {
+            res.writeHead(401);
+            res.end(JSON.stringify({ error: "Not authenticated" }));
+            return;
+        }
+
+        const password = String(req.body?.password || "");
+        if (password.length < 4) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "Password must be at least 4 characters" }));
+            return;
+        }
+
+        writeSettings({ ...currentSettings, adminPasswordHash: hashPassword(password) });
+        startAdminSession(res);
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true }));
+    });
+
     // Setup-mode-only routes - 404 once setup is complete (SETUP_MODE_FLAG
     // gone), so there's no lingering wifi-scan/connect attack surface on
     // an already-provisioned device.
@@ -494,6 +575,7 @@ try {
         const password = String(req.body?.password || "");
         const homeAirport = SETTINGS_VALIDATORS.homeAirport(req.body?.homeAirport);
         const timezone = SETTINGS_VALIDATORS.timezone(req.body?.timezone);
+        const adminPassword = String(req.body?.adminPassword || "");
 
         if (!ssid) {
             res.writeHead(400);
@@ -503,6 +585,11 @@ try {
         if (!homeAirport) {
             res.writeHead(400);
             res.end(JSON.stringify({ error: "Home airport must be a 3-4 character ICAO/FAA code" }));
+            return;
+        }
+        if (adminPassword.length < 4) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "Admin password must be at least 4 characters" }));
             return;
         }
 
@@ -544,7 +631,7 @@ try {
                     }
 
                     const currentSettings = loadSettings();
-                    const newSettings = { ...currentSettings, homeAirport };
+                    const newSettings = { ...currentSettings, homeAirport, adminPasswordHash: hashPassword(adminPassword) };
                     if (timezone) newSettings.timezone = timezone;
                     writeSettings(newSettings);
 
@@ -607,6 +694,10 @@ try {
     app.get("/getsettings", (req, res) => {
     let rawdata = fs.readFileSync(`${DATA_DIR}/settings.json`);
     let json = JSON.parse(rawdata);
+    // This endpoint is intentionally public/unauthenticated (the kiosk
+    // itself reads its own config here) - never include the password
+    // hash in a response nothing gates access to.
+    delete json.adminPasswordHash;
 
     res.writeHead(200);
     res.write(JSON.stringify(json));
@@ -657,6 +748,12 @@ try {
     };
 
     app.post("/savesettings", (req, res) => {
+        if (!isAdminAuthed(req)) {
+            res.writeHead(401);
+            res.end(JSON.stringify({ error: "Not authenticated" }));
+            return;
+        }
+
         const updates = {};
 
         for (const key of Object.keys(SETTINGS_VALIDATORS)) {
@@ -675,8 +772,9 @@ try {
         writeSettings(newSettings);
         sendMessageToClients(JSON.stringify({ type: "settingsupdated", payload: "{}" }));
 
+        const { adminPasswordHash, ...responseSettings } = newSettings;
         res.writeHead(200);
-        res.end(JSON.stringify({ ok: true, settings: newSettings }));
+        res.end(JSON.stringify({ ok: true, settings: responseSettings }));
     });
 
     // Proxies OpenSky traffic requests so credentials stay server-side and

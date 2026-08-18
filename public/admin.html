@@ -70,13 +70,47 @@
       padding: 8px 12px;
       margin-bottom: 8px;
     }
+    #bootstrapPasswordSection {
+      background: #fff8e6;
+      border: 1px solid #e8c766;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+    }
+    #bootstrapPasswordSection p {
+      margin: 0 0 4px;
+      font-size: 14px;
+    }
+    #changePasswordSection {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid #ddd;
+    }
   </style>
 </head>
 <body>
   <h1>METAR Board Admin</h1>
+
+  <div id="loginForm" style="display: none;">
+    <p>Enter the admin password to continue.</p>
+    <label for="loginPassword">Password</label>
+    <input type="password" id="loginPassword">
+    <button id="loginBtn">Log In</button>
+    <div id="loginStatus" class="error"></div>
+  </div>
+
+  <div id="settingsForm" style="display: none;">
   <p>Changes here are pushed to the display immediately - it will refresh on its own.</p>
 
   <div id="deviceStatus">Loading device status...</div>
+
+  <div id="bootstrapPasswordSection" style="display: none;">
+    <p><strong>No admin password is set yet</strong> - anyone on this network can currently change these settings.</p>
+    <label for="bootstrapPassword">Set an Admin Password</label>
+    <input type="password" id="bootstrapPassword" placeholder="At least 4 characters">
+    <button id="bootstrapPasswordBtn" type="button">Set Password</button>
+    <div id="bootstrapPasswordStatus"></div>
+  </div>
 
   <label for="homeAirport">Home Airport</label>
   <input type="text" id="homeAirport" placeholder="e.g. KFDK">
@@ -143,6 +177,14 @@
   <button id="saveBtn">Save</button>
   <div id="status"></div>
 
+  <div id="changePasswordSection" style="display: none;">
+    <label for="changePassword">Change Admin Password</label>
+    <input type="password" id="changePassword" placeholder="At least 4 characters">
+    <button id="changePasswordBtn" type="button">Update Password</button>
+    <div id="changePasswordStatus"></div>
+  </div>
+  </div>
+
   <script>
     const homeAirportInput = document.getElementById("homeAirport");
     const favoriteAirportsInput = document.getElementById("favoriteAirports");
@@ -159,12 +201,118 @@
     const showTrafficCheckbox = document.getElementById("showTraffic");
     const saveBtn = document.getElementById("saveBtn");
     const statusEl = document.getElementById("status");
+    const loginFormEl = document.getElementById("loginForm");
+    const settingsFormEl = document.getElementById("settingsForm");
+    const loginPasswordInput = document.getElementById("loginPassword");
+    const loginBtn = document.getElementById("loginBtn");
+    const loginStatusEl = document.getElementById("loginStatus");
+    const bootstrapSectionEl = document.getElementById("bootstrapPasswordSection");
+    const bootstrapPasswordInput = document.getElementById("bootstrapPassword");
+    const bootstrapPasswordBtn = document.getElementById("bootstrapPasswordBtn");
+    const bootstrapPasswordStatusEl = document.getElementById("bootstrapPasswordStatus");
+    const changeSectionEl = document.getElementById("changePasswordSection");
+    const changePasswordInput = document.getElementById("changePassword");
+    const changePasswordBtn = document.getElementById("changePasswordBtn");
+    const changePasswordStatusEl = document.getElementById("changePasswordStatus");
 
     function setStatus(message, isError) {
       statusEl.textContent = message;
       statusEl.className = isError ? "error" : "success";
     }
 
+    function loadSettingsForm() {
+      loginFormEl.style.display = "none";
+      settingsFormEl.style.display = "block";
+      loadDeviceStatusAndSettings();
+    }
+
+    function checkAdminSession() {
+      fetch("/admin/session")
+        .then((res) => res.json())
+        .then(({ passwordSet, authed }) => {
+          if (!passwordSet) {
+            bootstrapSectionEl.style.display = "block";
+            changeSectionEl.style.display = "none";
+            loadSettingsForm();
+          }
+          else if (!authed) {
+            loginFormEl.style.display = "block";
+            settingsFormEl.style.display = "none";
+          }
+          else {
+            bootstrapSectionEl.style.display = "none";
+            changeSectionEl.style.display = "block";
+            loadSettingsForm();
+          }
+        })
+        .catch(() => loadSettingsForm());
+    }
+
+    loginBtn.addEventListener("click", () => {
+      fetch("/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: loginPasswordInput.value })
+      })
+        .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+          if (!ok) throw new Error(body.error || "Login failed");
+          loginStatusEl.textContent = "";
+          checkAdminSession();
+        })
+        .catch((err) => { loginStatusEl.textContent = err.message; });
+    });
+
+    bootstrapPasswordBtn.addEventListener("click", () => {
+      if (bootstrapPasswordInput.value.length < 4) {
+        bootstrapPasswordStatusEl.textContent = "Password must be at least 4 characters.";
+        bootstrapPasswordStatusEl.className = "error";
+        return;
+      }
+      fetch("/admin/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: bootstrapPasswordInput.value })
+      })
+        .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+          if (!ok) throw new Error(body.error || "Failed to set password");
+          bootstrapSectionEl.style.display = "none";
+          changeSectionEl.style.display = "block";
+        })
+        .catch((err) => {
+          bootstrapPasswordStatusEl.textContent = err.message;
+          bootstrapPasswordStatusEl.className = "error";
+        });
+    });
+
+    changePasswordBtn.addEventListener("click", () => {
+      if (changePasswordInput.value.length < 4) {
+        changePasswordStatusEl.textContent = "Password must be at least 4 characters.";
+        changePasswordStatusEl.className = "error";
+        return;
+      }
+      fetch("/admin/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: changePasswordInput.value })
+      })
+        .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+          if (!ok) throw new Error(body.error || "Failed to update password");
+          changePasswordInput.value = "";
+          changePasswordStatusEl.textContent = "Password updated.";
+          changePasswordStatusEl.className = "success";
+        })
+        .catch((err) => {
+          changePasswordStatusEl.textContent = err.message;
+          changePasswordStatusEl.className = "error";
+        });
+    });
+
+    checkAdminSession();
+
+    function loadDeviceStatusAndSettings() {
     fetch("/updatestatus")
       .then(res => res.json())
       .then(update => {
@@ -254,6 +402,7 @@
         .then(() => setStatus("Saved - the display will refresh shortly.", false))
         .catch(err => setStatus("Failed to save: " + err.message, true));
     });
+    }
   </script>
 </body>
 </html>

@@ -15,6 +15,7 @@
     "showTfrOverlay": true,
     "showHomeAirspace": true,
     "showTraffic": true,
+    "adminPasswordHash": null,
     "showRadarByDefault": true,
     "debug": false,
     "externalcharts": "",

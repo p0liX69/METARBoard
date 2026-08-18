@@ -365,6 +365,21 @@
         </select>
       </div>
 
+      <div class="section">
+        <div class="section-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="10" width="16" height="10" rx="2"/>
+            <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+          </svg>
+          Admin Access
+        </div>
+        <p style="margin: 0 0 8px; font-size: 13px; color: var(--muted);">
+          Protects the <code>/admin</code> settings page from anyone else on your network.
+        </p>
+        <label class="field-label" for="adminPassword">Admin Password</label>
+        <input type="password" id="adminPassword" placeholder="At least 4 characters">
+      </div>
+
       <button id="connectBtn">
         <span class="spinner"></span>
         <span class="btn-label">Connect</span>
@@ -380,6 +395,7 @@
     const wifiPasswordInput = document.getElementById("wifiPassword");
     const homeAirportInput = document.getElementById("homeAirport");
     const timezoneSelect = document.getElementById("timezone");
+    const adminPasswordInput = document.getElementById("adminPassword");
     const connectBtn = document.getElementById("connectBtn");
     const connectBtnLabel = connectBtn.querySelector(".btn-label");
     const statusEl = document.getElementById("status");
@@ -495,6 +511,10 @@
         setStatus("Home airport must be a 3-4 character ICAO/FAA code.", "error");
         return;
       }
+      if (adminPasswordInput.value.length < 4) {
+        setStatus("Admin password must be at least 4 characters.", "error");
+        return;
+      }
 
       setLoading(true, "Connecting...");
       setStatus("Connecting - you may lose this page as the display switches networks. If it doesn't come back, reconnect to “METARBoard Setup” and reload.", "info");
@@ -506,7 +526,8 @@
           ssid: selectedNetwork.ssid,
           password: selectedNetwork.secured ? wifiPasswordInput.value : "",
           homeAirport: icao,
-          timezone: timezoneSelect.value
+          timezone: timezoneSelect.value,
+          adminPassword: adminPasswordInput.value
         })
       })
         .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
