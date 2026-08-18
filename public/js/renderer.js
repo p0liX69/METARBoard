@@ -169,6 +169,7 @@ const SIGMET_REFRESH_MS = 10 * 60 * 1000;
 async function fetchSigmets() {
     if (settings && settings.showSigmets === false) {
         sigmetFeatures.clear();
+        updateHazardLegend();
         return;
     }
 
@@ -181,6 +182,7 @@ async function fetchSigmets() {
         features.forEach((feature) => feature.set("datatype", "sigmet"));
         sigmetFeatures.clear();
         sigmetFeatures.extend(features);
+        updateHazardLegend();
     }
     catch (err) {
         console.log("Failed to load SIGMETs:", err);
@@ -194,6 +196,7 @@ async function fetchSigmets() {
 async function fetchAirmets() {
     if (settings && settings.showAirmets === false) {
         airmetFeatures.clear();
+        updateHazardLegend();
         return;
     }
 
@@ -206,6 +209,7 @@ async function fetchAirmets() {
         features.forEach((feature) => feature.set("datatype", "airmet"));
         airmetFeatures.clear();
         airmetFeatures.extend(features);
+        updateHazardLegend();
     }
     catch (err) {
         console.log("Failed to load AIRMETs:", err);
@@ -537,6 +541,11 @@ document.body.appendChild(windsAloftBox);
 const sunPanel = document.createElement("div");
 sunPanel.id = "sunPanel";
 document.body.appendChild(sunPanel);
+
+// Hazard-color key for SIGMET/AIRMET, below the local clock.
+const hazardLegend = document.createElement("div");
+hazardLegend.id = "hazardLegend";
+document.body.appendChild(hazardLegend);
 
 /**
  * NOAA's standard solar position formulas (equation of time + solar
@@ -1191,6 +1200,47 @@ function airmetStyle(feature) {
         fill: new ol.style.Fill({ color: `rgba(${config.color}, 0.24)` }),
         text: labelText(config)
     });
+}
+
+/**
+ * A SIGMET/AIRMET polygon's on-map text label only renders if its
+ * geometry's interior point happens to fall inside the current view -
+ * for a polygon spanning several states on a fixed-zoom kiosk display,
+ * that's unreliable (confirmed: often 4+ degrees outside the visible
+ * area even though the polygon's fill covers the whole screen). This
+ * fixed on-screen key is what actually lets someone tell hazard types
+ * apart, using ol.source.Vector#getFeaturesInExtent so it only lists
+ * hazards actually present in the current view, not every hazard
+ * nationwide.
+ */
+function updateHazardLegend() {
+    if (!map || !sigmetVectorSource || !airmetVectorSource) return;
+
+    const extent = map.getView().calculateExtent(map.getSize());
+    const entries = new Map();
+
+    sigmetVectorSource.getFeaturesInExtent(extent).forEach((feature) => {
+        const config = SIGMET_STYLE_BY_HAZARD[normalizeHazardCode(feature.get('hazard'))] || SIGMET_STYLE_DEFAULT;
+        entries.set(`SIGMET-${config.label}`, { group: 'SIGMET', label: config.label, color: config.color });
+    });
+    airmetVectorSource.getFeaturesInExtent(extent).forEach((feature) => {
+        const config = AIRMET_STYLE_BY_HAZARD[normalizeHazardCode(feature.get('hazard'))] || AIRMET_STYLE_DEFAULT;
+        entries.set(`AIRMET-${config.label}`, { group: 'AIRMET', label: config.label, color: config.color });
+    });
+
+    if (entries.size === 0) {
+        hazardLegend.style.display = "none";
+        return;
+    }
+
+    const rows = [...entries.values()].map((entry) => `
+        <div class="hazard-legend-row">
+            <span class="hazard-legend-swatch" style="background: rgb(${entry.color})"></span>
+            <span>${entry.group} - ${escapeHtml(entry.label)}</span>
+        </div>
+    `).join("");
+    hazardLegend.innerHTML = `<div class="hazard-legend-title">Active Hazards</div>${rows}`;
+    hazardLegend.style.display = "block";
 }
 
 /**
@@ -2806,20 +2856,32 @@ function fetchAircraftInfo(icao24List) {
 }
 
 /**
- * Pick a traffic icon by ICAO aircraft class (e.g. "H1P" = helicopter,
- * "L2J" = multi-engine land jet) when a database match exists, falling
- * back to a generic icon otherwise.
+ * Pick a traffic icon by ICAO aircraft class code (e.g. "H1T" = single-
+ * turbine helicopter, "L2J" = multi-engine land jet, "L1T" = single-
+ * engine turboprop) when a database match exists, falling back to a
+ * generic icon otherwise. Color carries the power-plant type (yellow =
+ * helicopter, red = jet, teal = turboprop, blue = piston, gray = unknown)
+ * since that's what's actually distinguishable at kiosk viewing distance
+ * - shape only needs to carry single vs. multi-engine within a color.
+ * The 3rd character (P/T/J/E) is engine type per OpenSky's
+ * icaoAircraftClass format - previously unchecked here, which silently
+ * lumped turboprops in with piston aircraft.
  */
 function getTrafficIconSrc(icao24) {
     const category = aircraftInfoCache.get((icao24 || "").toLowerCase())?.category;
     if (!category) return `${URL_SERVER}/img/traffic-unknown.svg`;
 
-    const upper = category.toUpperCase();
-    if (upper.startsWith("H")) return `${URL_SERVER}/img/traffic-helicopter.svg`;
-    if (upper.endsWith("J")) return `${URL_SERVER}/img/traffic-jet.svg`;
-    if (upper.startsWith("L1")) return `${URL_SERVER}/img/traffic-ga-single.svg`;
-    if (/^L[2-4]/.test(upper)) return `${URL_SERVER}/img/traffic-multi-prop.svg`;
-    return `${URL_SERVER}/img/traffic-unknown.svg`;
+    const code = category.toUpperCase();
+    if (code.startsWith("H")) return `${URL_SERVER}/img/traffic-helicopter.svg`;
+    if (code.endsWith("J")) return `${URL_SERVER}/img/traffic-jet.svg`;
+
+    const isMultiEngine = /^[A-Z][2-9C]/.test(code);
+    const isTurboprop = code.endsWith("T");
+
+    if (isMultiEngine) {
+        return isTurboprop ? `${URL_SERVER}/img/traffic-turboprop-multi.svg` : `${URL_SERVER}/img/traffic-multi-prop.svg`;
+    }
+    return isTurboprop ? `${URL_SERVER}/img/traffic-turboprop-single.svg` : `${URL_SERVER}/img/traffic-ga-single.svg`;
 }
 
 /**

@@ -80,6 +80,45 @@ html, body {
     color: #cc9955;
     margin-top: 2px;
 }
+/* Hazard-color key for the SIGMET/AIRMET overlays - the polygons
+   themselves are often too large for a single on-map text label to land
+   inside the current view (see renderer.js updateHazardLegend), so this
+   fixed key is the reliable way to tell hazard types apart at a glance. */
+#hazardLegend {
+    display: none;
+    position: fixed;
+    top: 140px;
+    left: 14px;
+    background: rgba(20, 20, 20, 0.85);
+    border: 2px solid #444;
+    border-radius: 10px;
+    padding: 10px 14px;
+    z-index: 1000;
+    font-family: Arial, sans-serif;
+    color: #eee;
+    font-size: 13px;
+    max-width: 210px;
+}
+#hazardLegend .hazard-legend-title {
+    font-weight: bold;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    color: #aaa;
+}
+#hazardLegend .hazard-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+#hazardLegend .hazard-legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
 #nightDimOverlay {
     position: fixed;
     top: 0;
