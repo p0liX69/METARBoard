@@ -2125,21 +2125,38 @@ function processTraffic() {
                 traffic: item
             });
             const icon = getTrafficIcon(item.Icao_addr);
-            trafficFeature.setStyle(new ol.style.Style({
-                image: new ol.style.Icon({
-                    src: icon.src,
-                    crossOrigin: 'anonymous',
-                    scale: icon.scale,
-                    rotation: tradians,
-                    // Icon assets are plain white silhouettes so this color
-                    // option (a clean multiplicative tint) reliably produces
-                    // an exact hex regardless of shape - civilian traffic is
-                    // a light blue that stands out against the sectional's
-                    // yellow/olive palette, military is the only thing that
-                    // gets called out in red.
-                    color: isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#40c4ff'
+            const iconColor = isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#1565c0';
+            trafficFeature.setStyle([
+                // A same-shape black copy, slightly larger, rendered behind
+                // the colored icon - reads as an outline that follows the
+                // actual silhouette instead of a plain circular halo, and
+                // is what makes the icon read against light chart terrain.
+                new ol.style.Style({
+                    image: new ol.style.Icon({
+                        src: icon.src,
+                        crossOrigin: 'anonymous',
+                        scale: icon.scale * 1.22,
+                        rotation: tradians,
+                        color: '#000000'
+                    })
+                }),
+                new ol.style.Style({
+                    image: new ol.style.Icon({
+                        src: icon.src,
+                        crossOrigin: 'anonymous',
+                        scale: icon.scale,
+                        rotation: tradians,
+                        // Icon assets are plain white silhouettes so this
+                        // color option (a clean multiplicative tint)
+                        // reliably produces an exact hex regardless of
+                        // shape - civilian traffic is a darker blue that
+                        // stands out against the sectional's yellow/olive
+                        // palette, military is the only thing called out
+                        // in red.
+                        color: iconColor
+                    })
                 })
-            }));
+            ]);
             trafficFeatures.push(trafficFeature);
 
             // ForeFlight-style trend vector: a line showing where this
