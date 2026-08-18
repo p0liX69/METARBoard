@@ -2190,14 +2190,16 @@ function processTraffic() {
                     datatype: "traffic-vector"
                 });
                 vectorFeature.setStyle([
-                    // Black outline first so the line reads against yellow
-                    // chart symbols/airport markers, same treatment as the
-                    // icon halo.
+                    // Black outline first so the line reads against any
+                    // chart color, same treatment as the icon outline.
+                    // Matches the icon's own color (cyan/red/magenta) so a
+                    // military or fleet aircraft's trend line is tagged
+                    // the same way as its icon, not left the old default.
                     new ol.style.Style({
                         stroke: new ol.style.Stroke({ color: '#000000', width: 4 })
                     }),
                     new ol.style.Style({
-                        stroke: new ol.style.Stroke({ color: '#ffcc00', width: 2 })
+                        stroke: new ol.style.Stroke({ color: iconColor, width: 2 })
                     })
                 ]);
                 trafficFeatures.push(vectorFeature);
