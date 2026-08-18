@@ -556,10 +556,17 @@ try {
     // open (isAdminAuthed() returns true) until one is set via
     // /admin/set-password - the bootstrap path for devices with no
     // keyboard and no way to type an initial password otherwise.
-    // Sessions are in-memory only (a service restart just means logging
-    // in again - acceptable friction for a LAN device) and don't need
-    // a cookie-parsing dependency for something this simple.
-    let adminSessions = new Set();
+    //
+    // The session cookie is a stateless HMAC (expiry + signature keyed on
+    // the current adminPasswordHash), not a random token tracked in a
+    // server-side Set - a plain in-memory Set was tried first, but every
+    // server.js deploy restarts the process and silently logs everyone
+    // out mid-session, which is confusing (a save can fail with no
+    // obvious cause if the page was left open across a restart). Signing
+    // instead of tracking survives restarts for free, and as a bonus
+    // automatically invalidates every existing session the moment the
+    // password is changed, since that changes the HMAC key.
+    const ADMIN_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
     function getCookie(req, name) {
         const header = req.headers.cookie || "";
@@ -571,17 +578,29 @@ try {
         return crypto.createHash("sha256").update(password).digest("hex");
     }
 
+    function signAdminSessionToken(adminPasswordHash, expiresAt) {
+        return crypto.createHmac("sha256", adminPasswordHash).update(String(expiresAt)).digest("hex");
+    }
+
     function isAdminAuthed(req) {
         const currentSettings = loadSettings();
         if (!currentSettings.adminPasswordHash) return true;
-        const token = getCookie(req, "metarboard_admin");
-        return !!(token && adminSessions.has(token));
+
+        const token = getCookie(req, "metarboard_admin") || "";
+        const [expiresAtRaw, signature] = token.split(".");
+        const expiresAt = Number(expiresAtRaw);
+        if (!Number.isFinite(expiresAt) || expiresAt < Date.now() || !signature) return false;
+
+        const expected = signAdminSessionToken(currentSettings.adminPasswordHash, expiresAt);
+        if (expected.length !== signature.length) return false;
+        return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
     }
 
     function startAdminSession(res) {
-        const token = crypto.randomBytes(24).toString("hex");
-        adminSessions.add(token);
-        res.setHeader("Set-Cookie", `metarboard_admin=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`);
+        const currentSettings = loadSettings();
+        const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
+        const signature = signAdminSessionToken(currentSettings.adminPasswordHash, expiresAt);
+        res.setHeader("Set-Cookie", `metarboard_admin=${expiresAt}.${signature}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ADMIN_SESSION_TTL_MS / 1000}`);
     }
 
     app.get('/admin/session', (req, res) => {
