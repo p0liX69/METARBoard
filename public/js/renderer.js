@@ -2124,24 +2124,22 @@ function processTraffic() {
                 datatype: "traffic",
                 traffic: item
             });
-            trafficFeature.setStyle([
-                // Dark halo behind the icon so it reads against any
-                // background (chart terrain, radar colors, etc.)
-                new ol.style.Style({
-                    image: new ol.style.Circle({
-                        radius: 16,
-                        fill: new ol.style.Fill({ color: 'rgba(0, 0, 0, 0.55)' })
-                    })
-                }),
-                new ol.style.Style({
-                    image: new ol.style.Icon({
-                        src: getTrafficIconSrc(item.Icao_addr),
-                        crossOrigin: 'anonymous',
-                        scale: 0.4,
-                        rotation: tradians
-                    })
+            const icon = getTrafficIcon(item.Icao_addr);
+            trafficFeature.setStyle(new ol.style.Style({
+                image: new ol.style.Icon({
+                    src: icon.src,
+                    crossOrigin: 'anonymous',
+                    scale: icon.scale,
+                    rotation: tradians,
+                    // Icon assets are plain white silhouettes so this color
+                    // option (a clean multiplicative tint) reliably produces
+                    // an exact hex regardless of shape - civilian traffic is
+                    // a light blue that stands out against the sectional's
+                    // yellow/olive palette, military is the only thing that
+                    // gets called out in red.
+                    color: isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#40c4ff'
                 })
-            ]);
+            }));
             trafficFeatures.push(trafficFeature);
 
             // ForeFlight-style trend vector: a line showing where this
@@ -2478,7 +2476,10 @@ pirepVectorLayer = new ol.layer.Vector({
 });
 
 trafficVectorSource = new ol.source.Vector({
-    features: trafficFeatures
+    features: trafficFeatures,
+    // Required backlink per the icon set's license terms (free for
+    // commercial use with attribution) - see getTrafficIcon.
+    attributions: ['Aircraft icons: <a href="https://adsb-radar.com" target="_blank">ADS-B Radar</a>']
 });
 trafficVectorLayer = new ol.layer.Vector({
     title: "Traffic",
@@ -2856,32 +2857,74 @@ function fetchAircraftInfo(icao24List) {
 }
 
 /**
- * Pick a traffic icon by ICAO aircraft class code (e.g. "H1T" = single-
- * turbine helicopter, "L2J" = multi-engine land jet, "L1T" = single-
- * engine turboprop) when a database match exists, falling back to a
- * generic icon otherwise. Color carries the power-plant type (yellow =
- * helicopter, red = jet, teal = turboprop, blue = piston, gray = unknown)
- * since that's what's actually distinguishable at kiosk viewing distance
- * - shape only needs to carry single vs. multi-engine within a color.
- * The 3rd character (P/T/J/E) is engine type per OpenSky's
- * icaoAircraftClass format - previously unchecked here, which silently
- * lumped turboprops in with piston aircraft.
+ * Pick a traffic icon shape by ICAO aircraft class code (e.g. "H1T" =
+ * single-turbine helicopter, "L2J" = multi-engine land jet, "L1T" =
+ * single-engine turboprop) when a database match exists, falling back to
+ * a generic icon otherwise. Shape alone carries aircraft type - color is
+ * reserved for calling out military traffic (see isMilitaryAircraft),
+ * not for civilian categorization. The 3rd character (P/T/J/E) is engine
+ * type per OpenSky's icaoAircraftClass format.
+ *
+ * Icons are ADS-B Radar's free ICAO-emitter-category SVG set
+ * (https://adsb-radar.com/help/icons.html, free for commercial use with
+ * attribution - see the map's attribution control) rather than hand-drawn
+ * shapes, so real aircraft silhouettes are recognizable at a glance.
+ * Each source file has a different native size (200px for the ADS-B
+ * Radar exports, ~512-683px for the standalone Cessna/regional-jet/
+ * turboprop ones), hence the paired scale value - a single fixed OL Icon
+ * scale would otherwise render some categories 2-3x larger than others.
  */
-function getTrafficIconSrc(icao24) {
+const TRAFFIC_ICON_TARGET_PX = 42;
+const TRAFFIC_ICON_BY_CATEGORY = {
+    unknown: { file: "traffic-unknown.svg", nativePx: 200 },
+    helicopter: { file: "traffic-helicopter.svg", nativePx: 200 },
+    jet: { file: "traffic-jet.svg", nativePx: 512 },
+    turbopropMulti: { file: "traffic-turboprop-multi.svg", nativePx: 512 },
+    turbopropSingle: { file: "traffic-turboprop-single.svg", nativePx: 200 },
+    pistonMulti: { file: "traffic-multi-prop.svg", nativePx: 200 },
+    pistonSingle: { file: "traffic-ga-single.svg", nativePx: 682.667 }
+};
+
+function trafficIconInfo(icon) {
+    return { src: `${URL_SERVER}/img/${icon.file}`, scale: TRAFFIC_ICON_TARGET_PX / icon.nativePx };
+}
+
+/**
+ * @returns {{src: string, scale: number}}
+ */
+function getTrafficIcon(icao24) {
     const category = aircraftInfoCache.get((icao24 || "").toLowerCase())?.category;
-    if (!category) return `${URL_SERVER}/img/traffic-unknown.svg`;
+    if (!category) return trafficIconInfo(TRAFFIC_ICON_BY_CATEGORY.unknown);
 
     const code = category.toUpperCase();
-    if (code.startsWith("H")) return `${URL_SERVER}/img/traffic-helicopter.svg`;
-    if (code.endsWith("J")) return `${URL_SERVER}/img/traffic-jet.svg`;
+    if (code.startsWith("H")) return trafficIconInfo(TRAFFIC_ICON_BY_CATEGORY.helicopter);
+    if (code.endsWith("J")) return trafficIconInfo(TRAFFIC_ICON_BY_CATEGORY.jet);
 
     const isMultiEngine = /^[A-Z][2-9C]/.test(code);
     const isTurboprop = code.endsWith("T");
 
     if (isMultiEngine) {
-        return isTurboprop ? `${URL_SERVER}/img/traffic-turboprop-multi.svg` : `${URL_SERVER}/img/traffic-multi-prop.svg`;
+        return trafficIconInfo(isTurboprop ? TRAFFIC_ICON_BY_CATEGORY.turbopropMulti : TRAFFIC_ICON_BY_CATEGORY.pistonMulti);
     }
-    return isTurboprop ? `${URL_SERVER}/img/traffic-turboprop-single.svg` : `${URL_SERVER}/img/traffic-ga-single.svg`;
+    return trafficIconInfo(isTurboprop ? TRAFFIC_ICON_BY_CATEGORY.turbopropSingle : TRAFFIC_ICON_BY_CATEGORY.pistonSingle);
+}
+
+// OpenSky's aircraft metadata has no dedicated "is military" flag - this
+// is a best-effort heuristic against the free-text operator field, which
+// for US military aircraft is usually a recognizable agency/branch name
+// (e.g. "UNITED STATES AIR FORCE", "US ARMY"). Civilian operators won't
+// match any of these, so false negatives (missed military traffic) are
+// far more likely than false positives.
+const MILITARY_OPERATOR_KEYWORDS = [
+    "AIR FORCE", "ARMY", "NAVY", "MARINE CORPS", "COAST GUARD",
+    "NATIONAL GUARD", "DEPARTMENT OF DEFENSE", "USAF", "USN", "USMC", "USCG"
+];
+
+function isMilitaryAircraft(icao24) {
+    const operator = aircraftInfoCache.get((icao24 || "").toLowerCase())?.operator;
+    if (!operator) return false;
+    const upper = operator.toUpperCase();
+    return MILITARY_OPERATOR_KEYWORDS.some((keyword) => upper.includes(keyword));
 }
 
 /**
