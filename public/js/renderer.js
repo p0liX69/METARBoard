@@ -2125,7 +2125,7 @@ function processTraffic() {
                 traffic: item
             });
             const icon = getTrafficIcon(item.Icao_addr);
-            const iconColor = isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#ffcc00';
+            const iconColor = isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#00e5ff';
             trafficFeature.setStyle([
                 // A ring of same-shape, same-size black copies nudged a
                 // couple pixels in each direction, rendered behind the
@@ -2154,9 +2154,11 @@ function processTraffic() {
                         // Icon assets are plain white silhouettes so this
                         // color option (a clean multiplicative tint)
                         // reliably produces an exact hex regardless of
-                        // shape - civilian traffic is the classic
-                        // sectional-chart golden yellow (also used by the
-                        // ownship icon elsewhere), military is the only
+                        // shape - civilian traffic is an electric cyan
+                        // chosen to have minimal overlap with the
+                        // sectional chart's own yellow/tan/olive/blue
+                        // palette (yellow and blue were both tried and
+                        // blended in too easily), military is the only
                         // thing called out
                         // in red.
                         color: iconColor
@@ -2897,13 +2899,13 @@ function fetchAircraftInfo(icao24List) {
  * turboprop ones), hence the paired scale value - a single fixed OL Icon
  * scale would otherwise render some categories 2-3x larger than others.
  */
-const TRAFFIC_ICON_TARGET_PX = 42;
+const TRAFFIC_ICON_TARGET_PX = 60;
 
 // Pixel displacements (screen-space, applied after the icon's own
 // rotation) for the black-outline copies in processTraffic - 8 points
 // around a small ring gives an even outline in every direction without
 // the gaps a 4-point N/S/E/W-only ring leaves on the diagonals.
-const TRAFFIC_OUTLINE_RADIUS_PX = 3;
+const TRAFFIC_OUTLINE_RADIUS_PX = 4;
 const TRAFFIC_OUTLINE_OFFSETS = Array.from({ length: 8 }, (_, i) => {
     const angle = (i / 8) * 2 * Math.PI;
     return [Math.cos(angle) * TRAFFIC_OUTLINE_RADIUS_PX, Math.sin(angle) * TRAFFIC_OUTLINE_RADIUS_PX];
