@@ -36,6 +36,25 @@ log() {
     echo "[check-for-update] $*"
 }
 
+# Restarting metarboard.service swaps the server-side code, but the kiosk's
+# already-running Chromium tab keeps executing whatever JS/CSS it already
+# loaded into memory - confirmed live: a device updated straight through
+# to a new release with the health check passing, yet the visible display
+# kept showing a UI redesign from several releases earlier until this was
+# added. lwrespawn (installed by provisioning, supervising chromium)
+# relaunches it automatically once it exits, and --incognito (see
+# labwc-autostart) means that relaunch is a genuine fresh navigation, not
+# a restored stale tab - so killing just the main chromium process here is
+# enough to get the new frontend on screen with no other intervention.
+reload_kiosk_display() {
+    local chrome_pid
+    chrome_pid="$(pgrep -u pi -f '/usr/lib/chromium/chromium --js-flags' || true)"
+    if [[ -n "${chrome_pid}" ]]; then
+        log "reloading kiosk display (chromium pid ${chrome_pid})"
+        kill -9 ${chrome_pid} || true
+    fi
+}
+
 # Atomically record the outcome of this run so /admin (via server.js's
 # /updatestatus) can show fleet health without SSH.
 write_status() {
@@ -172,6 +191,7 @@ if [[ "${HEALTHY}" -eq 1 ]]; then
     echo -n "${LATEST_TAG}" > "${tmp_version}"
     mv -f "${tmp_version}" "${CURRENT_VERSION_FILE}"
     write_status "success" "Updated to ${LATEST_TAG}" "${LATEST_TAG}"
+    reload_kiosk_display
 
     # Prune old releases, keeping the current one plus KEEP_RELEASES-1
     # previous ones for rollback headroom.
@@ -190,6 +210,7 @@ if [[ -n "${PREVIOUS_TARGET}" && -d "${PREVIOUS_TARGET}" ]]; then
     systemctl reset-failed metarboard || true
     if systemctl restart metarboard; then
         ROLLBACK_RESTARTED=1
+        reload_kiosk_display
     fi
 fi
 rm -rf "${NEW_RELEASE_DIR}"
