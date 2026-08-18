@@ -1,2 +1,2 @@
-untrusted comment: PLACEHOLDER minisign public key - generated for pipeline testing only, NOT a production trust anchor. Replace before shipping real devices: run `minisign -G` yourself, keep the private key safe, and commit the real minisign.pub content here in its place.
-RWRxOvWvbCaEWV0U++8KEeltz0BsGTN+b/N9PaPhDh/6HRzFJI1KJMVA
+untrusted comment: minisign public key generated 2026-08-18 on the dev machine (has GitHub push access) to unblock testing - Todd should rotate this to a key generated on a separated machine before shipping real customer devices, per provisioning/build-release.sh's setup notes.
+RWTYR8VE9om0O+IJDfz9Dc6/fpc6IfMvWOkkgHph2p1M1fZZRTE86xm0
