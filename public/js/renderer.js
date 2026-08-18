@@ -2125,7 +2125,7 @@ function processTraffic() {
                 traffic: item
             });
             const icon = getTrafficIcon(item.Icao_addr);
-            const iconColor = isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#1565c0';
+            const iconColor = isMilitaryAircraft(item.Icao_addr) ? '#ff2222' : '#ffcc00';
             trafficFeature.setStyle([
                 // A same-shape black copy, slightly larger, rendered behind
                 // the colored icon - reads as an outline that follows the
@@ -2149,9 +2149,10 @@ function processTraffic() {
                         // Icon assets are plain white silhouettes so this
                         // color option (a clean multiplicative tint)
                         // reliably produces an exact hex regardless of
-                        // shape - civilian traffic is a darker blue that
-                        // stands out against the sectional's yellow/olive
-                        // palette, military is the only thing called out
+                        // shape - civilian traffic is the classic
+                        // sectional-chart golden yellow (also used by the
+                        // ownship icon elsewhere), military is the only
+                        // thing called out
                         // in red.
                         color: iconColor
                     })
