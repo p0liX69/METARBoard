@@ -54,6 +54,32 @@ html, body {
     margin-top: 4px;
     letter-spacing: 1px;
 }
+#sunPanel {
+    display: none;
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, #1a1a1a, #000);
+    border: 2px solid #4a3a1a;
+    border-radius: 10px;
+    padding: 6px 18px;
+    z-index: 1000;
+    text-align: center;
+    font-family: 'Courier New', monospace;
+    color: #ffcc66;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+#sunPanel .sun-times {
+    font-size: 16px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+#sunPanel .sun-countdown {
+    font-size: 12px;
+    color: #cc9955;
+    margin-top: 2px;
+}
 #nightDimOverlay {
     position: fixed;
     top: 0;

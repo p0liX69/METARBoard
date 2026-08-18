@@ -6,113 +6,372 @@
   <title>METAR Board - Setup</title>
   <link rel="icon" type="image/x-icon" href="img/favicon.png"/>
   <style>
+    :root {
+      --navy: #0f2942;
+      --navy-light: #1c4569;
+      --amber: #f5a623;
+      --amber-dark: #d98c0f;
+      --green: #1a7f37;
+      --red: #c0392b;
+      --border: #e1e6ea;
+      --text: #1a2733;
+      --muted: #6b7a87;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: sans-serif;
-      max-width: 480px;
-      margin: 40px auto;
-      padding: 0 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(160deg, var(--navy) 0%, var(--navy-light) 45%, #2d6a8f 100%);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      padding: 24px 14px 48px;
     }
-    h1 {
-      font-size: 22px;
+
+    .card {
+      background: #fff;
+      width: 100%;
+      max-width: 440px;
+      border-radius: 18px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+      overflow: hidden;
+      align-self: flex-start;
     }
-    p.intro {
-      color: #555;
+
+    .card-header {
+      background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+      color: #fff;
+      padding: 28px 26px 22px;
+      text-align: center;
     }
-    label {
+
+    .card-header svg {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 8px;
+    }
+
+    .card-header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    .card-header p {
+      margin: 6px 0 0;
+      font-size: 14px;
+      color: #cfe0ee;
+    }
+
+    .card-body {
+      padding: 26px;
+    }
+
+    .section {
+      margin-bottom: 26px;
+    }
+
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .section-label svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      color: var(--navy-light);
+    }
+
+    label.field-label {
       display: block;
-      margin-top: 20px;
-      font-weight: bold;
+      font-size: 14px;
+      font-weight: 600;
+      margin: 14px 0 6px;
+      color: var(--text);
     }
+
     input[type="text"],
     input[type="password"],
     select {
-      font-size: 18px;
-      padding: 6px;
+      font-size: 16px;
+      padding: 12px 14px;
       width: 100%;
-      max-width: 280px;
-      margin-top: 6px;
-      box-sizing: border-box;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      background: #f8fafb;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: inherit;
+      color: var(--text);
     }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--navy-light);
+      box-shadow: 0 0 0 3px rgba(28, 69, 105, 0.15);
+      background: #fff;
+    }
+
     #networkList {
-      margin-top: 10px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      max-height: 240px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      max-height: 230px;
       overflow-y: auto;
+      background: #f8fafb;
     }
+
     .network-row {
-      padding: 10px 14px;
-      border-bottom: 1px solid #eee;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
       cursor: pointer;
       display: flex;
-      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.12s;
     }
+
     .network-row:last-child {
       border-bottom: none;
     }
+
     .network-row:hover {
-      background: #f2f2f2;
+      background: #eef3f7;
     }
+
     .network-row.selected {
-      background: #dbeeff;
-      font-weight: bold;
+      background: #e7f1fa;
     }
-    .network-signal {
-      color: #888;
+
+    .network-ssid {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .network-ssid svg.lock {
+      width: 13px;
+      height: 13px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .signal-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    .signal-bars .bar {
+      width: 3px;
+      border-radius: 1px;
+      background: var(--border);
+    }
+
+    .signal-bars .bar.on {
+      background: var(--navy-light);
+    }
+
+    .signal-bars .bar:nth-child(1) { height: 25%; }
+    .signal-bars .bar:nth-child(2) { height: 50%; }
+    .signal-bars .bar:nth-child(3) { height: 75%; }
+    .signal-bars .bar:nth-child(4) { height: 100%; }
+
+    .empty-row, .loading-row {
+      padding: 16px 14px;
+      color: var(--muted);
       font-size: 14px;
+      text-align: center;
     }
-    button {
-      margin-top: 28px;
-      font-size: 18px;
-      padding: 10px 24px;
+
+    .rescan-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--navy-light);
+      background: none;
+      border: none;
+      padding: 4px 2px;
+      cursor: pointer;
     }
-    #rescanBtn {
-      margin-top: 8px;
-      font-size: 14px;
-      padding: 4px 12px;
+
+    .rescan-link svg {
+      width: 14px;
+      height: 14px;
     }
+
+    #connectBtn {
+      width: 100%;
+      margin-top: 6px;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--amber) 0%, var(--amber-dark) 100%);
+      color: #2a1a00;
+      cursor: pointer;
+      transition: transform 0.08s, box-shadow 0.15s, opacity 0.15s;
+      box-shadow: 0 6px 16px rgba(217, 140, 15, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    #connectBtn:active {
+      transform: translateY(1px);
+    }
+
+    #connectBtn:disabled {
+      opacity: 0.65;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2.5px solid rgba(42, 26, 0, 0.35);
+      border-top-color: #2a1a00;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    #connectBtn.loading .spinner {
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     #status {
-      margin-top: 16px;
-      font-weight: bold;
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.4;
+      display: none;
     }
+
+    #status.visible {
+      display: block;
+    }
+
     #status.error {
-      color: #b00020;
+      background: #fdecea;
+      color: var(--red);
     }
+
     #status.success {
-      color: #1a7f37;
+      background: #eaf6ec;
+      color: var(--green);
+    }
+
+    #status.info {
+      background: #eef3f7;
+      color: var(--navy-light);
     }
   </style>
 </head>
 <body>
-  <h1>METAR Board Setup</h1>
-  <p class="intro">Connect this display to your WiFi network to finish setup.</p>
+  <div class="card">
+    <div class="card-header">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/>
+      </svg>
+      <h1>METAR Board Setup</h1>
+      <p>Let's get your display connected</p>
+    </div>
 
-  <label>WiFi Network</label>
-  <div id="networkList">Scanning...</div>
-  <button id="rescanBtn" type="button">Rescan</button>
+    <div class="card-body">
+      <div class="section">
+        <div class="section-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M2 8.5a15.9 15.9 0 0 1 20 0"/>
+            <path d="M5.5 12a11 11 0 0 1 13 0"/>
+            <path d="M9 15.5a6 6 0 0 1 6 0"/>
+            <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/>
+          </svg>
+          WiFi Network
+        </div>
 
-  <div id="passwordField" style="display: none;">
-    <label for="wifiPassword">Password</label>
-    <input type="password" id="wifiPassword" placeholder="WiFi password">
+        <div id="networkList"><div class="loading-row">Scanning for networks...</div></div>
+        <button class="rescan-link" id="rescanBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+            <path d="M3.5 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.65 4.36A9 9 0 0 0 20.5 15"/>
+          </svg>
+          Rescan networks
+        </button>
+
+        <div id="passwordField" style="display: none;">
+          <label class="field-label" for="wifiPassword">Password</label>
+          <input type="password" id="wifiPassword" placeholder="WiFi password">
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="12" x2="12" y2="7"/>
+            <line x1="12" y1="12" x2="15.5" y2="14"/>
+          </svg>
+          Display Settings
+        </div>
+
+        <label class="field-label" for="homeAirport">Home Airport</label>
+        <input type="text" id="homeAirport" placeholder="e.g. KFDK">
+
+        <label class="field-label" for="timezone">Timezone</label>
+        <select id="timezone">
+          <option value="America/New_York">Eastern</option>
+          <option value="America/Chicago">Central</option>
+          <option value="America/Denver">Mountain</option>
+          <option value="America/Phoenix">Mountain (Arizona, no DST)</option>
+          <option value="America/Los_Angeles">Pacific</option>
+          <option value="America/Anchorage">Alaska</option>
+          <option value="Pacific/Honolulu">Hawaii</option>
+          <option value="UTC">UTC</option>
+        </select>
+      </div>
+
+      <button id="connectBtn">
+        <span class="spinner"></span>
+        <span class="btn-label">Connect</span>
+      </button>
+      <div id="status"></div>
+    </div>
   </div>
-
-  <label for="homeAirport">Home Airport</label>
-  <input type="text" id="homeAirport" placeholder="e.g. KFDK">
-
-  <label for="timezone">Timezone</label>
-  <select id="timezone">
-    <option value="America/New_York">Eastern</option>
-    <option value="America/Chicago">Central</option>
-    <option value="America/Denver">Mountain</option>
-    <option value="America/Phoenix">Mountain (Arizona, no DST)</option>
-    <option value="America/Los_Angeles">Pacific</option>
-    <option value="America/Anchorage">Alaska</option>
-    <option value="Pacific/Honolulu">Hawaii</option>
-    <option value="UTC">UTC</option>
-  </select>
-
-  <button id="connectBtn">Connect</button>
-  <div id="status"></div>
 
   <script>
     const networkListEl = document.getElementById("networkList");
@@ -122,13 +381,21 @@
     const homeAirportInput = document.getElementById("homeAirport");
     const timezoneSelect = document.getElementById("timezone");
     const connectBtn = document.getElementById("connectBtn");
+    const connectBtnLabel = connectBtn.querySelector(".btn-label");
     const statusEl = document.getElementById("status");
 
     let selectedNetwork = null;
 
-    function setStatus(message, isError) {
+    function setStatus(message, kind) {
+      // kind: "error" | "success" | "info"
       statusEl.textContent = message;
-      statusEl.className = isError ? "error" : "success";
+      statusEl.className = message ? `visible ${kind}` : "";
+    }
+
+    function setLoading(isLoading, label) {
+      connectBtn.disabled = isLoading;
+      connectBtn.classList.toggle("loading", isLoading);
+      connectBtnLabel.textContent = label;
     }
 
     function escapeHtml(value) {
@@ -139,15 +406,26 @@
         .replace(/"/g, "&quot;");
     }
 
+    function signalBars(signal) {
+      const level = signal >= 75 ? 4 : signal >= 50 ? 3 : signal >= 25 ? 2 : 1;
+      let html = '<span class="signal-bars">';
+      for (let i = 1; i <= 4; i++) {
+        html += `<span class="bar${i <= level ? ' on' : ''}"></span>`;
+      }
+      return html + "</span>";
+    }
+
+    const lockIcon = '<svg class="lock" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5Zm0 2a3 3 0 0 1 3 3v3H9V6a3 3 0 0 1 3-3Z"/></svg>';
+
     function renderNetworks(networks) {
       if (!networks.length) {
-        networkListEl.innerHTML = "<div class='network-row'>No networks found</div>";
+        networkListEl.innerHTML = "<div class='empty-row'>No networks found nearby</div>";
         return;
       }
       networkListEl.innerHTML = networks.map((net) => `
         <div class="network-row" data-ssid="${escapeHtml(net.ssid)}" data-secured="${net.secured}">
-          <span>${net.secured ? "\u{1F512} " : ""}${escapeHtml(net.ssid)}</span>
-          <span class="network-signal">${net.signal}%</span>
+          <span class="network-ssid">${net.secured ? lockIcon : ""}${escapeHtml(net.ssid)}</span>
+          ${signalBars(net.signal)}
         </div>
       `).join("");
 
@@ -162,11 +440,11 @@
     }
 
     function scanNetworks() {
-      networkListEl.textContent = "Scanning...";
+      networkListEl.innerHTML = "<div class='loading-row'>Scanning for networks...</div>";
       fetch("/setup/wifi-scan")
         .then((res) => res.json())
         .then(renderNetworks)
-        .catch(() => { networkListEl.textContent = "Failed to scan - try Rescan"; });
+        .catch(() => { networkListEl.innerHTML = "<div class='empty-row'>Scan failed - try Rescan</div>"; });
     }
 
     rescanBtn.addEventListener("click", scanNetworks);
@@ -185,13 +463,14 @@
         .then((status) => {
           if (status.state === "success") {
             stopStatusPolling();
-            setStatus("Connected! Loading your display...", false);
+            setLoading(true, "Connected!");
+            setStatus("Connected! Loading your display...", "success");
             setTimeout(() => location.reload(), 2000);
           }
           else if (status.state === "failed") {
             stopStatusPolling();
-            connectBtn.disabled = false;
-            setStatus(status.message || "Could not connect - try again.", true);
+            setLoading(false, "Connect");
+            setStatus(status.message || "Could not connect - try again.", "error");
           }
           // state "connecting" or "idle": keep polling silently.
         })
@@ -208,17 +487,17 @@
 
     connectBtn.addEventListener("click", () => {
       if (!selectedNetwork) {
-        setStatus("Choose a WiFi network first.", true);
+        setStatus("Choose a WiFi network first.", "error");
         return;
       }
       const icao = homeAirportInput.value.trim().toUpperCase();
       if (!/^[A-Z0-9]{3,4}$/.test(icao)) {
-        setStatus("Home airport must be a 3-4 character ICAO/FAA code.", true);
+        setStatus("Home airport must be a 3-4 character ICAO/FAA code.", "error");
         return;
       }
 
-      connectBtn.disabled = true;
-      setStatus("Connecting - you may lose this page as the display switches networks. If it doesn't come back, reconnect to “METARBoard Setup” and reload.", false);
+      setLoading(true, "Connecting...");
+      setStatus("Connecting - you may lose this page as the display switches networks. If it doesn't come back, reconnect to “METARBoard Setup” and reload.", "info");
 
       fetch("/setup/complete", {
         method: "POST",
@@ -236,8 +515,8 @@
           statusPollTimer = setInterval(pollStatus, 3000);
         })
         .catch((err) => {
-          connectBtn.disabled = false;
-          setStatus(err.message, true);
+          setLoading(false, "Connect");
+          setStatus(err.message, "error");
         });
     });
   </script>

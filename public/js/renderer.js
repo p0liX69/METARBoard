@@ -55,6 +55,7 @@ async function fetchHomeAirspace(icao) {
 }
 
 let windsAloftIcaoFetched = null;
+let homeAirportLonLat = null;
 
 /**
  * Fetch and render low-altitude winds aloft for the FD collective station
@@ -146,6 +147,7 @@ function centerOnHomeAirport() {
         hasCenteredOnHomeAirport = true;
         fetchHomeAirspace(home);
         fetchWindsAloft(home);
+        homeAirportLonLat = ol.proj.toLonLat(apt.getGeometry().getCoordinates());
         const savedView = JSON.parse(localStorage.getItem("lastMapView") || "null");
         const hasValidSavedView = savedView
             && Array.isArray(savedView.center)
@@ -432,6 +434,99 @@ windsAloftBox.id = "windsAloftBox";
 windsAloftBox.className = "static-metar-popup windsaloft-popup";
 document.body.appendChild(windsAloftBox);
 
+// Top-center sunrise/sunset badge, between the two wall clocks.
+const sunPanel = document.createElement("div");
+sunPanel.id = "sunPanel";
+document.body.appendChild(sunPanel);
+
+/**
+ * NOAA's standard solar position formulas (equation of time + solar
+ * declination + hour angle) - verified against a known reference
+ * (Washington DC summer solstice 2024: sunrise/sunset within a minute of
+ * published values) before use here.
+ * @returns {{sunriseMinutes: number, sunsetMinutes: number}} minutes past UTC midnight
+ */
+function calculateSunTimes(date, lat, lon) {
+    const deg2rad = (deg) => deg * Math.PI / 180;
+    const rad2deg = (rad) => rad * 180 / Math.PI;
+
+    const julianDay = date.getTime() / 86400000 + 2440587.5;
+    const julianCentury = (julianDay - 2451545) / 36525;
+
+    const geomMeanLongSun = (280.46646 + julianCentury * (36000.76983 + julianCentury * 0.0003032)) % 360;
+    const geomMeanAnomSun = 357.52911 + julianCentury * (35999.05029 - 0.0001537 * julianCentury);
+    const eccentEarthOrbit = 0.016708634 - julianCentury * (0.000042037 + 0.0000001267 * julianCentury);
+
+    const sunEqOfCtr = Math.sin(deg2rad(geomMeanAnomSun)) * (1.914602 - julianCentury * (0.004817 + 0.000014 * julianCentury))
+        + Math.sin(deg2rad(2 * geomMeanAnomSun)) * (0.019993 - 0.000101 * julianCentury)
+        + Math.sin(deg2rad(3 * geomMeanAnomSun)) * 0.000289;
+
+    const sunTrueLong = geomMeanLongSun + sunEqOfCtr;
+    const sunAppLong = sunTrueLong - 0.00569 - 0.00478 * Math.sin(deg2rad(125.04 - 1934.136 * julianCentury));
+
+    const meanObliqEcliptic = 23 + (26 + (21.448 - julianCentury * (46.815 + julianCentury * (0.00059 - julianCentury * 0.001813))) / 60) / 60;
+    const obliqCorr = meanObliqEcliptic + 0.00256 * Math.cos(deg2rad(125.04 - 1934.136 * julianCentury));
+
+    const sunDeclin = rad2deg(Math.asin(Math.sin(deg2rad(obliqCorr)) * Math.sin(deg2rad(sunAppLong))));
+
+    const varY = Math.tan(deg2rad(obliqCorr / 2)) * Math.tan(deg2rad(obliqCorr / 2));
+    const eqOfTime = 4 * rad2deg(
+        varY * Math.sin(2 * deg2rad(geomMeanLongSun))
+        - 2 * eccentEarthOrbit * Math.sin(deg2rad(geomMeanAnomSun))
+        + 4 * eccentEarthOrbit * varY * Math.sin(deg2rad(geomMeanAnomSun)) * Math.cos(2 * deg2rad(geomMeanLongSun))
+        - 0.5 * varY * varY * Math.sin(4 * deg2rad(geomMeanLongSun))
+        - 1.25 * eccentEarthOrbit * eccentEarthOrbit * Math.sin(2 * deg2rad(geomMeanAnomSun))
+    );
+
+    const haSunrise = rad2deg(Math.acos(
+        (Math.cos(deg2rad(90.833)) / (Math.cos(deg2rad(lat)) * Math.cos(deg2rad(sunDeclin))))
+        - Math.tan(deg2rad(lat)) * Math.tan(deg2rad(sunDeclin))
+    ));
+
+    const solarNoonMinutes = 720 - 4 * lon - eqOfTime;
+    return {
+        sunriseMinutes: solarNoonMinutes - haSunrise * 4,
+        sunsetMinutes: solarNoonMinutes + haSunrise * 4
+    };
+}
+
+function formatMinutesUntil(targetMinutesUtc, nowUtcMinutes) {
+    let delta = targetMinutesUtc - nowUtcMinutes;
+    if (delta < 0) delta += 1440;
+    const h = Math.floor(delta / 60);
+    const m = Math.round(delta % 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function updateSunPanel() {
+    if (!homeAirportLonLat) {
+        sunPanel.style.display = "none";
+        return;
+    }
+
+    const now = new Date();
+    const [lon, lat] = homeAirportLonLat;
+    const { sunriseMinutes, sunsetMinutes } = calculateSunTimes(now, lat, lon);
+    const nowUtcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes() + now.getUTCSeconds() / 60;
+
+    const timeZone = getConfiguredTimeZone();
+    const utcMinutesToLocalString = (minutes) => {
+        const asDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, Math.round(minutes)));
+        return new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' }).format(asDate);
+    };
+
+    const isDaytime = nowUtcMinutes >= sunriseMinutes && nowUtcMinutes < sunsetMinutes;
+    const countdownLabel = isDaytime
+        ? `Sunset in ${formatMinutesUntil(sunsetMinutes, nowUtcMinutes)}`
+        : `Sunrise in ${formatMinutesUntil(sunriseMinutes, nowUtcMinutes)}`;
+
+    sunPanel.style.display = "block";
+    sunPanel.innerHTML = `
+        <div class="sun-times">☀ ${utcMinutesToLocalString(sunriseMinutes)} &nbsp;|&nbsp; ${utcMinutesToLocalString(sunsetMinutes)} 🌙</div>
+        <div class="sun-countdown">${countdownLabel}</div>
+    `;
+}
+
 /**
  * Refresh the favorites strip from whatever METAR data is already loaded
  * for the map - no separate fetch, this reuses metarFeatures.
@@ -536,9 +631,11 @@ function updateClockOverlay() {
 setInterval(() => {
     updateClockOverlay();
     updateNightDimOverlay();
+    updateSunPanel();
 }, 1000);
 updateClockOverlay();
 updateNightDimOverlay();
+updateSunPanel();
 
 /**
  * Load settings, metadatasets, database list, and last known position
