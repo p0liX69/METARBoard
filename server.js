@@ -560,9 +560,21 @@ try {
     const SETUP_MODE_FLAG = `${DATA_DIR}/setup-mode-active`;
     const isSetupModeActive = () => fs.existsSync(SETUP_MODE_FLAG);
 
+    // The kiosk's own Chromium always requests this over loopback
+    // (http://localhost:8500) - a phone doing the actual setup always
+    // comes in over the hotspot's subnet instead. Distinguishing on that
+    // means the big screen shows "grab your phone" instructions instead
+    // of the same cramped, phone-sized form the wizard needs.
+    const isLoopbackRequest = (req) => {
+        const addr = req.socket.remoteAddress || "";
+        return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+    };
+
     app.get('/', (req, res) => {
         if (isSetupModeActive()) {
-            res.sendFile(`${__dirname}/public/setup.html`);
+            res.sendFile(isLoopbackRequest(req)
+                ? `${__dirname}/public/setup-display.html`
+                : `${__dirname}/public/setup.html`);
             return;
         }
         res.sendFile(`${__dirname}/public/index.html`);

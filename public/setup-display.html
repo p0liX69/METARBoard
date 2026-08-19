@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>METAR Board - Setup</title>
+  <link rel="icon" type="image/x-icon" href="img/favicon.png"/>
+  <style>
+    :root {
+      --navy: #0f2942;
+      --navy-light: #1c4569;
+      --amber: #f5a623;
+      --amber-dark: #d98c0f;
+      --green: #3fb763;
+      --red: #e8746a;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: radial-gradient(1400px 700px at 85% -10%, rgba(245, 166, 35, 0.14), transparent 60%),
+                  linear-gradient(160deg, var(--navy) 0%, var(--navy-light) 55%, #2c5f82 100%);
+      color: #eef3f7;
+      font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .stage {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4vh 6vw;
+      gap: 4vh;
+    }
+
+    .brandrow {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .brandrow svg {
+      width: 56px;
+      height: 56px;
+      flex-shrink: 0;
+      color: var(--amber);
+    }
+
+    .wordmark {
+      font-weight: 700;
+      font-size: 40px;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .wordmark small {
+      display: block;
+      font-weight: 500;
+      font-size: 15px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #b9cbdb;
+      margin-top: 6px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 44px;
+      font-weight: 700;
+      text-align: center;
+      text-wrap: balance;
+      line-height: 1.15;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--amber);
+    }
+
+    .steps {
+      display: flex;
+      gap: 5vw;
+      max-width: 1400px;
+    }
+
+    .step {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+    }
+
+    .step .num {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--amber) 0%, var(--amber-dark) 100%);
+      color: #2a1a00;
+      font-weight: 800;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .step p {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.4;
+      color: #dbe6ef;
+      max-width: 22ch;
+    }
+
+    .step code {
+      display: inline-block;
+      margin-top: 2px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--amber);
+      font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+      letter-spacing: 0.01em;
+    }
+
+    .statusbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 19px;
+      color: #b9cbdb;
+      padding: 14px 26px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .statusbar .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--amber);
+      flex-shrink: 0;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+
+    .statusbar.success .dot {
+      background: var(--green);
+      animation: none;
+    }
+
+    .statusbar.failed .dot {
+      background: var(--red);
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.7); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .statusbar .dot { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="brandrow">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/>
+      </svg>
+      <div class="wordmark">METARBoard<small>Aviation Weather &amp; Traffic Display</small></div>
+    </div>
+
+    <h1>Let's get this display <em>on the air.</em></h1>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <p>Connect your phone to this WiFi network</p>
+        <code>METARBoard Setup</code>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <p>Open a browser and go to</p>
+        <code>10.42.0.1:8500</code>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <p>Pick your home WiFi, airport, and password on your phone</p>
+      </div>
+    </div>
+
+    <div class="statusbar" id="statusbar">
+      <span class="dot"></span>
+      <span id="statusText">Waiting for a phone to connect&hellip;</span>
+    </div>
+  </div>
+
+  <script>
+    const statusbarEl = document.getElementById("statusbar");
+    const statusTextEl = document.getElementById("statusText");
+
+    const MESSAGES = {
+      idle: "Waiting for a phone to connect…",
+      connecting: "Connecting to your WiFi… this display will load automatically.",
+      success: "Connected! Loading your display…",
+      failed: "Setup didn't finish - reconnect your phone to “METARBoard Setup” and try again."
+    };
+
+    function poll() {
+      fetch("/setup/status")
+        .then((res) => res.json())
+        .then((status) => {
+          const state = status.state || "idle";
+          statusbarEl.className = "statusbar" + (state === "success" ? " success" : state === "failed" ? " failed" : "");
+          statusTextEl.textContent = MESSAGES[state] || MESSAGES.idle;
+          if (state === "success") {
+            setTimeout(() => location.reload(), 4000);
+            return;
+          }
+          setTimeout(poll, 3000);
+        })
+        .catch(() => setTimeout(poll, 3000));
+    }
+
+    poll();
+  </script>
+</body>
+</html>

@@ -261,14 +261,24 @@ credentials on it yet:
 1. `metarboard-network-setup.service` (runs automatically at boot, before
    the main app) detects there's no working network connection and
    starts an **open** WiFi hotspot named `METARBoard Setup`.
-2. The kiosk display itself shows the setup wizard (same port, same
-   Chromium session - nothing extra to configure) - but the customer
-   doesn't need to look at the TV at all. They connect their **phone or
-   laptop** to the `METARBoard Setup` network, open a browser, and go to
+2. The kiosk display itself shows a big-screen instruction card (`public/
+   setup-display.html`) - "connect your phone to this WiFi network /
+   open a browser to this address" - not the wizard form itself. The
+   customer does the actual setup on their **phone or laptop**: connect
+   to the `METARBoard Setup` network, open a browser, and go to
    `http://10.42.0.1:8500` (NetworkManager's default gateway address for
    a shared/hotspot connection - confirm this is actually what's assigned
    when testing on real hardware, since this is customer-facing and
    worth getting exactly right).
+
+   Both the TV and the phone hit the same `/` route while setup mode is
+   active - `server.js` tells them apart by request origin (the kiosk's
+   own Chromium always connects over loopback; a phone always comes in
+   over the hotspot subnet) and serves the big-screen version to the TV,
+   the interactive wizard to everything else. The TV's version polls the
+   same `/setup/status` the wizard does, so it flips to "Connected!
+   Loading your display…" and reloads into the map on its own once the
+   phone finishes.
 3. The wizard lists nearby WiFi networks, lets them pick one and enter
    its password (if secured), and set their home airport + timezone. An
    optional "Name This Display" field (e.g. "Front Desk") is also offered
