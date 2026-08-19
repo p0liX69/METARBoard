@@ -5,5 +5,7 @@
 **/*.db-shm
 **/*.db-wal
 **/*.mbtiles
+provisioning/*.img
+provisioning/*.img.gz
 .DS_Store
 .env

@@ -54,7 +54,12 @@ cp "${REPO_ROOT}/package-lock.json" "${STAGE}/"
 cp "${REPO_ROOT}/airports.json" "${STAGE}/"
 cp "${REPO_ROOT}/settings.default.json" "${STAGE}/"
 cp -R "${REPO_ROOT}/public" "${STAGE}/public"
-cp -R "${REPO_ROOT}/provisioning" "${STAGE}/provisioning"
+# --exclude, not plain cp -R: provisioning/ is also where golden CM5
+# images get built and stored (multi-GB .img/.img.gz, gitignored but
+# still sitting on disk) - confirmed live this hung build-release.sh for
+# minutes tar-ing an 11GB file into what should be a small release
+# tarball.
+rsync -a --exclude='*.img' --exclude='*.img.gz' "${REPO_ROOT}/provisioning/" "${STAGE}/provisioning/"
 cp -R "${REPO_ROOT}/install" "${STAGE}/install"
 cp -R "${REPO_ROOT}/images" "${STAGE}/images"
 
