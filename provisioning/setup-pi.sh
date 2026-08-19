@@ -49,6 +49,16 @@ echo "==> Installing rsync/curl/jq/minisign (if missing)"
 apt-get update -y
 apt-get install -y rsync curl jq minisign
 
+# Confirmed live on a Compute Module 5: NetworkManager's software WiFi
+# radio ships soft-disabled by default on that image even though the
+# onboard wireless (wlan0/brcmfmac) is present and working -
+# metarboard-network-setup.service's hotspot fallback (and the customer's
+# own home WiFi later) both depend on WiFi actually being usable. Harmless
+# no-op on hardware where it's already on.
+if command -v nmcli >/dev/null 2>&1; then
+    nmcli radio wifi on || true
+fi
+
 echo "==> Installing Node.js ${NODE_MAJOR}.x (if not already present)"
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | sed 's/^v//;s/\..*//')" -lt "${NODE_MAJOR}" ]]; then
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -

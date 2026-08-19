@@ -2,6 +2,17 @@
 
 This turns a freshly-flashed Raspberry Pi into a running METARBoard appliance.
 
+**Compute Module 5:** confirmed working with this exact same flow, no code
+changes required - same SoC (BCM2712) and OS as a Pi 5, so Chromium,
+`better-sqlite3`'s native module, and the vc4/v3d GPU stack all just work.
+The one thing to check on a fresh CM5 image: `nmcli general status` may
+show `WIFI disabled` even though the onboard wireless hardware and firmware
+are fine (`WIFI-HW enabled`) - `setup-pi.sh` now runs `nmcli radio wifi on`
+itself to cover this, but if you're troubleshooting a hotspot that never
+comes up, check that first. When buying/flashing a CM5, get the **wireless
+SKU** - the zero-IT setup flow depends on the device broadcasting its own
+hotspot.
+
 ## 1. Flash the SD card
 
 Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to write
