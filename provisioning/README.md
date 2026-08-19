@@ -326,6 +326,79 @@ what they'll see in the wizard's success message.
 on a provisioned Pi and reboot it to simulate a customer's out-of-the-box
 first boot.
 
+## 11. Building a golden image for bulk flashing (CM5)
+
+Once a device is fully provisioned (steps 1-9 above) and confirmed
+working, you can capture its eMMC/SD as a "golden image" and flash that
+directly onto other units instead of re-running setup-pi.sh on each one.
+
+**Before capturing - reset everything that must be unique per device.**
+A freshly-provisioned unit has already been through first boot once, so
+it's not the blank slate a truly new unit would be. Skipping this step
+means every device flashed from the image would share the same hostname,
+SSH host keys, and machine-id - the exact mDNS collision bug the hostname
+uniqueness feature (above) exists to prevent, reintroduced via imaging
+instead of literal duplicate hostnames.
+
+```bash
+sudo systemctl stop metarboard
+sudo rm -f /opt/metarboard-data/hostname-initialized   # re-enables set-unique-hostname.sh
+sudo rm -f /opt/metarboard-data/settings.json          # falls back to settings.default.json
+sudo rm -f /opt/metarboard-data/positionhistory.db /opt/metarboard-data/setup-attempt-status.json
+sudo rm -rf ~/METARBoard                               # your provisioning checkout, not needed at runtime
+sudo truncate -s 0 /etc/machine-id                     # triggers systemd's own first-boot detection...
+sudo rm -f /var/lib/dbus/machine-id /etc/ssh/ssh_host_*  # ...which also regenerates SSH host keys
+rm -f ~/.bash_history
+sudo systemctl start metarboard
+```
+
+Leave `/opt/metarboard-data/charts`, `aircraft.db`, and `CURRENT_VERSION`
+alone - those are exactly what you want every shipped unit to start with.
+
+**Capturing the image (Compute Module 5).** A CM5's eMMC isn't a
+removable card - it has to be exposed as a USB mass-storage device:
+
+1. Fit the CM5's **EMMC-DISABLE / nRPIBOOT jumper** (BCM2712 GPIO 20) to
+   force the boot ROM into USB boot mode instead of loading the normal
+   bootloader. This is a physical jumper on the carrier/IO board - check
+   yours if it's not the official Raspberry Pi CM5 IO board.
+2. Connect the board's USB-C port to your Mac and power it on.
+3. Build/run [`rpiboot`](https://github.com/raspberrypi/usbboot) on the
+   Mac (`brew install libusb pkg-config`, then clone+`make
+   INSTALL_PREFIX=/usr/local`), then:
+   ```bash
+   sudo rpiboot -d mass-storage-gadget
+   ```
+   Once it finishes, the eMMC shows up as a normal external disk in
+   `diskutil list`.
+4. Image it and compress the result:
+   ```bash
+   diskutil unmountDisk /dev/diskN
+   sudo dd if=/dev/rdiskN bs=4m | gzip > metarboard-golden-v1.img.gz
+   ```
+   (`/dev/rdiskN`, the raw device, is much faster than the buffered
+   `/dev/diskN`.) Store that file wherever you keep build artifacts.
+
+**Bulk-flashing new units.** Connecting several jumpered CM5s to one
+powered USB hub before running `rpiboot` lets it expose all of them as
+separate disks at once - `provisioning/flash-cm5.sh` then writes the
+golden image to as many of them in parallel as you confirm:
+
+```bash
+./provisioning/flash-cm5.sh /path/to/metarboard-golden-v1.img.gz
+```
+
+It only ever touches disks you explicitly type and re-confirm by name -
+see the comments at the top of the script for the safety model (a `dd`
+to the wrong `/dev/diskN` can destroy data on your Mac, not just the
+CM5). Remove the EMMC-DISABLE jumper from each unit before powering it on
+normally afterward, or it'll boot back into USB boot mode instead of the
+flashed OS.
+
+Each flashed unit still generates its own unique hostname/SSH
+keys/machine-id on its real first boot, since that's derived from its own
+CPU serial at runtime, not baked into the image.
+
 ## Re-provisioning / updating an existing Pi
 
 Re-running `sudo ./provisioning/setup-pi.sh` from an updated checkout will
