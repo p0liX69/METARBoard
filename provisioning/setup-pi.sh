@@ -156,6 +156,21 @@ if id "${DESKTOP_USER}" >/dev/null 2>&1 && [[ -x /usr/bin/chromium ]]; then
         cp /etc/xdg/labwc/autostart /etc/xdg/labwc/autostart.orig
     fi
     cp "${REPO_ROOT}/provisioning/labwc-system-autostart" /etc/xdg/labwc/autostart
+
+    # This kiosk has no mouse/touchpad attached, but labwc still renders
+    # an idle cursor sprite regardless of whether a real pointer device
+    # exists - confirmed live it sits visible (and never moves, since
+    # nothing ever generates motion events) over both the loading
+    # background and the map. There's no "just hide it" config option in
+    # labwc, so this installs a fully transparent cursor theme instead -
+    # the standard workaround for exactly this situation.
+    mkdir -p /usr/share/icons/metarboard-blank
+    cp -R "${REPO_ROOT}/provisioning/metarboard-blank-cursor/." /usr/share/icons/metarboard-blank/
+    ENV_FILE="${DESKTOP_HOME}/.config/labwc/environment"
+    if [[ -f "${ENV_FILE}" ]] && ! grep -q '^XCURSOR_THEME=' "${ENV_FILE}"; then
+        printf '\nXCURSOR_THEME=metarboard-blank\nXCURSOR_SIZE=32\n' >> "${ENV_FILE}"
+        chown "${DESKTOP_USER}:${DESKTOP_USER}" "${ENV_FILE}"
+    fi
 else
     echo "    no '${DESKTOP_USER}' user or no chromium found, skipping kiosk auto-start"
     echo "    (see provisioning/README.md if you need to set this up manually)"

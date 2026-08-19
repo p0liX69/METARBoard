@@ -1,0 +1,3 @@
+[Icon Theme]
+Name=METARBoard Blank
+Comment=Fully transparent cursor - this kiosk has no pointer device attached, so the compositor's own idle cursor sprite should never be visible

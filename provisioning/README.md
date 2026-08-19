@@ -171,6 +171,19 @@ Before launching Chromium, the autostart script also:
   the wait above with auto-detection made Chromium pick X11 instead and
   crash-loop with zero recovery ("Missing X server or $DISPLAY").
 
+**Hiding the mouse cursor:** this kiosk has no mouse/touchpad attached,
+but `labwc` still renders an idle cursor sprite regardless - there's no
+config option to simply turn it off. `setup-pi.sh` installs a fully
+transparent cursor theme (`provisioning/metarboard-blank-cursor/`,
+prebuilt with `xcursorgen` - `labwc`'s environment file needs
+`XCURSOR_THEME` set to an actual theme, not left unset, for this to take
+effect) and points `~/.config/labwc/environment`'s `XCURSOR_THEME` at it,
+appending rather than overwriting the keyboard settings already in that
+file. Note that `grim` (used for all the screenshot verification
+elsewhere in this doc) never captures the cursor either way - it lives on
+a compositor overlay the wlr-screencopy protocol excludes by design - so
+confirming this one requires actually looking at the physical screen.
+
 After provisioning, `sudo reboot` and confirm the screen comes up directly
 in the fullscreen map view with no login prompt or desktop visible. If
 Chromium's whole process ever crashes, `lwrespawn` restarts it
