@@ -1,0 +1,39 @@
+// Lets the unprivileged, headless `metarboard` service user rename the
+// device (server.js's /setup/complete route, "Display Name" field) without
+// an interactive polkit auth prompt - impossible anyway, since this user
+// has no login session for an authentication agent to attach to. Same
+// reasoning as 50-metarboard-network.rules: hostnamectl/systemctl talk to
+// daemons already running as root over D-Bus, and polkit is what
+// authorizes *those* daemons to act on the request - not sudo, so this is
+// compatible with metarboard.service's NoNewPrivileges=yes.
+//
+// hostnamectl set-hostname with no --static/--transient/--pretty flag (as
+// called here) sets all three, hence granting both actions rather than
+// just set-static-hostname.
+//
+// The avahi-daemon restart is also required, not optional - confirmed
+// live that avahi-daemon does NOT pick up a hostnamectl change on its own
+// (mDNS kept answering for the old name until a restart), despite that
+// being commonly assumed/documented behavior for some avahi builds. The
+// rule is scoped to exactly that one unit + verb via action.lookup, not a
+// blanket manage-units grant, so this can't be used to restart/stop
+// anything else.
+//
+// Installed by setup-pi.sh to /etc/polkit-1/rules.d/51-metarboard-hostname.rules
+polkit.addRule(function(action, subject) {
+    if (subject.user != "metarboard") return;
+
+    var hostnameActions = [
+        "org.freedesktop.hostname1.set-hostname",
+        "org.freedesktop.hostname1.set-static-hostname"
+    ];
+    if (hostnameActions.indexOf(action.id) !== -1) {
+        return polkit.Result.YES;
+    }
+
+    if (action.id == "org.freedesktop.systemd1.manage-units"
+        && action.lookup("unit") == "avahi-daemon.service"
+        && action.lookup("verb") == "restart") {
+        return polkit.Result.YES;
+    }
+});

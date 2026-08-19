@@ -6,6 +6,7 @@ const fs = require("fs");
 const { execFile } = require("child_process");
 const crypto = require("crypto");
 const WebSocket = require('ws');
+const os = require("os");
 const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const { XMLParser } = require('fast-xml-parser');
 const { unzip, unzipSync } = require('zlib');
@@ -66,6 +67,27 @@ const DATA_DIR = process.env.METARBOARD_DATA_DIR || __dirname;
 // here only to exclude the hotspot from seeing itself in /setup/wifi-scan
 // results.
 const SETUP_HOTSPOT_SSID = "METARBoard Setup";
+
+// Every device imaged from the same golden SD card ships with the literal
+// same hostname otherwise, which silently collides on mDNS the moment a
+// customer has more than one unit on their network (confirmed live: a
+// second device answered for the first one's "metarboard.local"). A
+// dedicated first-boot service (provisioning/set-unique-hostname.sh) gives
+// every device a hardware-derived unique name automatically; this lets the
+// setup wizard override that with something a customer actually recognizes
+// ("front-desk") if they bother to type one in.
+const HOSTNAME_PREFIX = "metarboard-";
+
+/** Turns "Front Desk!!" into "front-desk" - a valid, DNS-safe hostname label. */
+function slugifyHostname(rawName) {
+    const slug = String(rawName || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40);
+    return slug || null;
+}
 
 let DB_PATH = `${DATA_DIR}/charts`;
 
@@ -682,10 +704,10 @@ try {
 
     const SETUP_STATUS_FILE = `${DATA_DIR}/setup-attempt-status.json`;
 
-    function writeSetupStatus(state, message) {
+    function writeSetupStatus(state, message, extra = {}) {
         try {
             const tmp = `${SETUP_STATUS_FILE}.tmp`;
-            fs.writeFileSync(tmp, JSON.stringify({ state, message, at: new Date().toISOString() }));
+            fs.writeFileSync(tmp, JSON.stringify({ state, message, ...extra, at: new Date().toISOString() }));
             fs.renameSync(tmp, SETUP_STATUS_FILE);
         }
         catch (err) {
@@ -726,6 +748,7 @@ try {
         const homeAirport = SETTINGS_VALIDATORS.homeAirport(req.body?.homeAirport);
         const timezone = SETTINGS_VALIDATORS.timezone(req.body?.timezone);
         const adminPassword = String(req.body?.adminPassword || "");
+        const displayNameSlug = slugifyHostname(req.body?.displayName);
 
         if (!ssid) {
             res.writeHead(400);
@@ -792,7 +815,35 @@ try {
                         console.log("Failed to clear setup-mode flag:", unlinkErr.message);
                     }
 
-                    writeSetupStatus("success", `Connected to ${ssid}`);
+                    // The success message reports the resolved mDNS hostname
+                    // so the wizard can show the customer exactly what to
+                    // bookmark for /admin later - either the name they just
+                    // typed in, or (if they left it blank) whatever the
+                    // first-boot set-unique-hostname.sh service already
+                    // assigned this specific device at boot.
+                    const finishSetup = (hostname) => writeSetupStatus("success", `Connected to ${ssid}`, { hostname });
+
+                    if (displayNameSlug) {
+                        // avahi-daemon does not pick up a hostnamectl change
+                        // on its own (confirmed live - it kept answering for
+                        // the old name until restarted), hence the explicit
+                        // restart here too.
+                        const newHostname = `${HOSTNAME_PREFIX}${displayNameSlug}`;
+                        execFile('hostnamectl', ['set-hostname', newHostname], (hostErr) => {
+                            if (hostErr) {
+                                console.log("Failed to set custom hostname:", hostErr.message);
+                                finishSetup(os.hostname());
+                                return;
+                            }
+                            execFile('systemctl', ['restart', 'avahi-daemon'], (avahiErr) => {
+                                if (avahiErr) console.log("Failed to restart avahi-daemon after hostname change:", avahiErr.message);
+                                finishSetup(newHostname);
+                            });
+                        });
+                    }
+                    else {
+                        finishSetup(os.hostname());
+                    }
                 });
             });
         });

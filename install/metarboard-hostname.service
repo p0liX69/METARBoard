@@ -1,0 +1,12 @@
+[Unit]
+Description=METARBoard first-boot unique hostname assignment
+Before=metarboard-network-setup.service
+ConditionPathExists=!/opt/metarboard-data/hostname-initialized
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/metarboard/provisioning/set-unique-hostname.sh
+
+[Install]
+WantedBy=multi-user.target

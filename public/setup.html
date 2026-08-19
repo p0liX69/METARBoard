@@ -352,6 +352,9 @@
         <label class="field-label" for="homeAirport">Home Airport</label>
         <input type="text" id="homeAirport" placeholder="e.g. KFDK">
 
+        <label class="field-label" for="displayName">Name This Display (optional)</label>
+        <input type="text" id="displayName" placeholder="e.g. Front Desk, Classroom 2">
+
         <label class="field-label" for="timezone">Timezone</label>
         <select id="timezone">
           <option value="America/New_York">Eastern</option>
@@ -394,6 +397,7 @@
     const passwordFieldEl = document.getElementById("passwordField");
     const wifiPasswordInput = document.getElementById("wifiPassword");
     const homeAirportInput = document.getElementById("homeAirport");
+    const displayNameInput = document.getElementById("displayName");
     const timezoneSelect = document.getElementById("timezone");
     const adminPasswordInput = document.getElementById("adminPassword");
     const connectBtn = document.getElementById("connectBtn");
@@ -480,8 +484,9 @@
           if (status.state === "success") {
             stopStatusPolling();
             setLoading(true, "Connected!");
-            setStatus("Connected! Loading your display...", "success");
-            setTimeout(() => location.reload(), 2000);
+            const address = status.hostname ? `${status.hostname}.local:8500/admin` : "the device's address on your network, port 8500";
+            setStatus(`Connected! To change settings later, visit ${address} from any device on this WiFi. Loading your display...`, "success");
+            setTimeout(() => location.reload(), 6000);
           }
           else if (status.state === "failed") {
             stopStatusPolling();
@@ -526,6 +531,7 @@
           ssid: selectedNetwork.ssid,
           password: selectedNetwork.secured ? wifiPasswordInput.value : "",
           homeAirport: icao,
+          displayName: displayNameInput.value.trim(),
           timezone: timezoneSelect.value,
           adminPassword: adminPasswordInput.value
         })

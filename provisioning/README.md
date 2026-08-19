@@ -226,16 +226,36 @@ credentials on it yet:
    when testing on real hardware, since this is customer-facing and
    worth getting exactly right).
 3. The wizard lists nearby WiFi networks, lets them pick one and enter
-   its password (if secured), and set their home airport + timezone.
+   its password (if secured), and set their home airport + timezone. An
+   optional "Name This Display" field (e.g. "Front Desk") is also offered
+   - see the hostname note below for why this matters once a customer has
+   more than one unit.
 4. On submit, the device connects to that network, saves the settings,
    and the kiosk display reloads into the normal map view - no reboot,
-   no SSH, no command line.
+   no SSH, no command line. The success message reports the device's
+   final mDNS address (e.g. `metarboard-front-desk.local:8500/admin`) so
+   the customer has something to note down for later.
 
 If setup is interrupted (power loss, walked away) the hotspot just stays
 up - the device is never fully unreachable, and the customer can
 reconnect and finish later. A device physically moved to a different
 WiFi network later will drop back into setup mode on its own the next
 time it can't connect, for the same reason.
+
+### Hostname uniqueness
+
+Every device imaged from the same golden SD card would otherwise share
+the literal same hostname ("METARBoard") - confirmed live that this
+breaks mDNS the moment a customer has more than one unit on their network
+(a second device answered for the first one's `metarboard.local`).
+`metarboard-hostname.service` (runs once, at first boot, before the
+network setup check) assigns every device a hardware-derived unique
+hostname automatically (`metarboard-<suffix>`, derived from the CPU
+serial) - no customer input required, and guaranteed not to collide. If
+the customer names their display during the setup wizard, that name
+(slugified, e.g. "Front Desk" -> `metarboard-front-desk`) overrides the
+auto-generated one; if they leave it blank, the auto-generated name is
+what they'll see in the wizard's success message.
 
 **Testing this yourself:** `sudo nmcli connection delete <your-wifi-profile-name>`
 on a provisioned Pi and reboot it to simulate a customer's out-of-the-box
