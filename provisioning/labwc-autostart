@@ -40,6 +40,34 @@ rm -f "${HOME}/.config/chromium/SingletonLock" \
       "${HOME}/.config/chromium/SingletonSocket"
 
 /usr/bin/kanshi &
+
+# metarboard.service starts on its own systemd track with no ordering
+# guarantee relative to the desktop session/autologin reaching this
+# script - confirmed live that Chromium routinely wins the race and
+# navigates to http://localhost:8500 before the backend is listening,
+# landing on Chromium's own "ERR_CONNECTION_REFUSED" interstitial. That
+# page has no visible loading indicator, and Chromium's built-in
+# retry/backoff for it takes on the order of 15-20s to recover on its
+# own - confusing on an appliance with no keyboard/mouse to tell someone
+# it's not actually broken. Waiting here for a real 200 before ever
+# launching Chromium means the very first navigation just succeeds.
+# Capped at 30s so a genuinely broken backend doesn't block the kiosk
+# forever - lwrespawn/the watchdog still cover that case afterward.
+for i in $(seq 1 30); do
+    curl -s -o /dev/null http://localhost:8500/health && break
+    sleep 1
+done
+
+# --ozone-platform=wayland: without this, Chromium "auto"-detects the
+# platform at startup, and confirmed live that adding the backend-wait
+# loop above somehow makes that auto-detection pick X11 instead of
+# Wayland on this hardware - it then dies instantly and repeatedly
+# ("Missing X server or $DISPLAY"), which lwrespawn just relaunches into
+# the same failure forever (a tight crash loop, not the slow recovery the
+# watchdog is built for - zero renderer/GPU process ever spawns). Forcing
+# Wayland explicitly removes the ambiguity outright rather than relying
+# on auto-detection to keep guessing right - this is a fixed, Wayland-only
+# kiosk, so there is nothing to actually auto-detect.
 /usr/bin/lwrespawn /usr/bin/chromium \
     --kiosk \
     --incognito \
@@ -51,6 +79,7 @@ rm -f "${HOME}/.config/chromium/SingletonLock" \
     --check-for-update-interval=31536000 \
     --password-store=basic \
     --start-fullscreen \
+    --ozone-platform=wayland \
     --remote-debugging-port=9223 \
     --remote-debugging-address=127.0.0.1 \
     http://localhost:8500 &
