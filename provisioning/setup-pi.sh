@@ -47,7 +47,7 @@ fi
 
 echo "==> Installing rsync/curl/jq/minisign (if missing)"
 apt-get update -y
-apt-get install -y rsync curl jq minisign
+apt-get install -y rsync curl jq minisign swaybg
 
 # Confirmed live on a Compute Module 5: NetworkManager's software WiFi
 # radio ships soft-disabled by default on that image even though the
@@ -144,6 +144,7 @@ if id "${DESKTOP_USER}" >/dev/null 2>&1 && [[ -x /usr/bin/chromium ]]; then
     DESKTOP_HOME="$(getent passwd "${DESKTOP_USER}" | cut -d: -f6)"
     mkdir -p "${DESKTOP_HOME}/.config/labwc"
     cp "${REPO_ROOT}/provisioning/labwc-autostart" "${DESKTOP_HOME}/.config/labwc/autostart"
+    cp "${REPO_ROOT}/provisioning/kiosk-loading-bg.png" "${DESKTOP_HOME}/.config/labwc/kiosk-loading-bg.png"
     chmod +x "${DESKTOP_HOME}/.config/labwc/autostart"
     chown -R "${DESKTOP_USER}:${DESKTOP_USER}" "${DESKTOP_HOME}/.config/labwc"
 

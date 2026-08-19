@@ -41,6 +41,17 @@ rm -f "${HOME}/.config/chromium/SingletonLock" \
 
 /usr/bin/kanshi &
 
+# Shows the METARBoard mark on the same navy background as the boot splash
+# (provisioning/plymouth/) while Chromium is still starting - without
+# this there's a plain black screen for several seconds between Plymouth
+# handing off and Chromium's first paint (plus however long the
+# backend-wait loop below takes), which looks identical to the display
+# being broken on an appliance with no other status indicator. Chromium
+# launches --start-fullscreen and covers this entirely once it paints, so
+# there's no need to kill swaybg afterward - it's just never visible again
+# unless something clears the screen in front of it.
+/usr/bin/swaybg -i "${HOME}/.config/labwc/kiosk-loading-bg.png" -m fill &
+
 # metarboard.service starts on its own systemd track with no ordering
 # guarantee relative to the desktop session/autologin reaching this
 # script - confirmed live that Chromium routinely wins the race and
@@ -51,10 +62,15 @@ rm -f "${HOME}/.config/chromium/SingletonLock" \
 # own - confusing on an appliance with no keyboard/mouse to tell someone
 # it's not actually broken. Waiting here for a real 200 before ever
 # launching Chromium means the very first navigation just succeeds.
-# Capped at 30s so a genuinely broken backend doesn't block the kiosk
-# forever - lwrespawn/the watchdog still cover that case afterward.
-for i in $(seq 1 30); do
-    curl -s -o /dev/null http://localhost:8500/health && break
+# Capped at 30s worst case (10 attempts x up to 2s each + 1s sleep) so a
+# genuinely broken backend doesn't block the kiosk forever - lwrespawn/the
+# watchdog still cover that case afterward. --max-time on curl is not
+# optional here - confirmed live that a single hung attempt with no
+# timeout can stall this loop forever, which is worse than the problem
+# it's meant to fix (it never reaches the sleep/next-iteration, let alone
+# the chromium launch below).
+for i in $(seq 1 10); do
+    curl -s -o /dev/null --max-time 2 http://localhost:8500/health && break
     sleep 1
 done
 

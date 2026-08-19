@@ -154,6 +154,23 @@ taskbar. This requires:
 - Autologin to desktop enabled for that user — also step 1. Without it, the
   desktop session (and therefore the kiosk browser) never starts.
 
+Before launching Chromium, the autostart script also:
+- Starts `swaybg` showing the METARBoard mark (`kiosk-loading-bg.png`) as
+  the Wayland background, so there's branded content instead of a plain
+  black screen during the gap between Plymouth's boot splash handing off
+  and Chromium's first paint. Chromium's `--start-fullscreen` covers it
+  completely once it paints - no need to kill it afterward.
+- Waits for a real `200` from `/health` before ever launching Chromium -
+  without this, Chromium routinely wins the boot race against
+  `metarboard.service` and lands on its own `ERR_CONNECTION_REFUSED`
+  interstitial for ~15-20s. The `curl --max-time` on this check is not
+  optional - confirmed live that a single hung attempt with none can
+  stall the whole loop forever, which is worse than the problem it fixes.
+- Forces `--ozone-platform=wayland` explicitly rather than trusting
+  Chromium's "auto" platform detection - confirmed live that combining
+  the wait above with auto-detection made Chromium pick X11 instead and
+  crash-loop with zero recovery ("Missing X server or $DISPLAY").
+
 After provisioning, `sudo reboot` and confirm the screen comes up directly
 in the fullscreen map view with no login prompt or desktop visible. If
 Chromium's whole process ever crashes, `lwrespawn` restarts it
