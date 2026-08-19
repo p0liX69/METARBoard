@@ -23,6 +23,21 @@
 # only resets on the next full relaunch, which is the behavior we want for
 # an appliance that should reflect current server settings, not months-old
 # cached state.
+#
+# Chromium's SingletonLock records the hostname it was created under, and
+# refuses to break the lock itself if the *current* hostname doesn't match
+# (a deliberate safety check for shared/NFS-mounted profile directories on
+# different machines) - it just silently fails to open a window forever,
+# with no error visible anywhere but its own stderr. Confirmed live: this
+# device rebooted after its hostname changed (support for that shipped in
+# v1.3.0's setup wizard "Name This Display" field) and came up sitting at
+# the bare desktop with Chromium crash-looping invisibly underneath. This
+# is a single-purpose kiosk - there is never a legitimate second real
+# instance whose lock this could actually be protecting, so it's always
+# safe to clear it before every fresh session start.
+rm -f "${HOME}/.config/chromium/SingletonLock" \
+      "${HOME}/.config/chromium/SingletonCookie" \
+      "${HOME}/.config/chromium/SingletonSocket"
 
 /usr/bin/kanshi &
 /usr/bin/lwrespawn /usr/bin/chromium \
