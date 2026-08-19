@@ -136,6 +136,15 @@ if id "${DESKTOP_USER}" >/dev/null 2>&1 && [[ -x /usr/bin/chromium ]]; then
     cp "${REPO_ROOT}/provisioning/labwc-autostart" "${DESKTOP_HOME}/.config/labwc/autostart"
     chmod +x "${DESKTOP_HOME}/.config/labwc/autostart"
     chown -R "${DESKTOP_USER}:${DESKTOP_USER}" "${DESKTOP_HOME}/.config/labwc"
+
+    # labwc runs the stock /etc/xdg/labwc/autostart in addition to the
+    # user one above - confirmed live it briefly shows the desktop
+    # wallpaper/taskbar on every boot before Chromium's kiosk window
+    # covers them. Back up the original once, then replace it.
+    if [[ -f /etc/xdg/labwc/autostart && ! -f /etc/xdg/labwc/autostart.orig ]]; then
+        cp /etc/xdg/labwc/autostart /etc/xdg/labwc/autostart.orig
+    fi
+    cp "${REPO_ROOT}/provisioning/labwc-system-autostart" /etc/xdg/labwc/autostart
 else
     echo "    no '${DESKTOP_USER}' user or no chromium found, skipping kiosk auto-start"
     echo "    (see provisioning/README.md if you need to set this up manually)"

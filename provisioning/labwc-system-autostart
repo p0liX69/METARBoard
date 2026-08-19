@@ -1,0 +1,14 @@
+#!/bin/sh
+# Replaces the stock /etc/xdg/labwc/autostart shipped by Raspberry Pi OS.
+# labwc runs BOTH the system-wide file and the per-user one
+# (~/.config/labwc/autostart, this repo's provisioning/labwc-autostart) -
+# confirmed live that the stock system file's `pcmanfm-pi` (desktop
+# icons/wallpaper) and `wf-panel-pi` (taskbar) were still launching and
+# briefly visible on screen before Chromium's kiosk window came up and
+# covered them, even though our own user autostart deliberately omits
+# both. kanshi is dropped here too since our user autostart already owns
+# it - no need to run two instances managing the same displays.
+# lxsession-xdg-autostart is kept: it processes generic XDG autostart
+# .desktop entries (audio/bluetooth helpers etc.) that aren't part of the
+# visible desktop shell this kiosk is hiding.
+/usr/bin/lxsession-xdg-autostart

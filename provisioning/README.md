@@ -163,6 +163,17 @@ If the desktop user or `chromium` binary isn't found, `setup-pi.sh` skips
 this step and prints a warning — check that you flashed the desktop image
 and re-run the script.
 
+**No desktop flash on boot:** labwc runs the stock Raspberry Pi OS
+`/etc/xdg/labwc/autostart` *in addition to* the per-user one above -
+confirmed live its `pcmanfm-pi` (wallpaper/desktop icons) and
+`wf-panel-pi` (taskbar) were still launching and briefly visible before
+Chromium's kiosk window came up and covered them, even though the user
+autostart deliberately omits both. `setup-pi.sh` backs up the original
+to `/etc/xdg/labwc/autostart.orig` and replaces it with
+`provisioning/labwc-system-autostart`, which drops those two lines.
+Like the autostart file itself, this lives outside `/opt/metarboard`, so
+a device provisioned before this shipped needs it applied once manually.
+
 **Status as of 2026-08-16:** the app itself (charts, radar, METARs, live
 traffic) is fully working and verified on the test Pi (192.168.9.189). The
 kiosk autostart file is installed and correct (confirmed via SSH), but a
