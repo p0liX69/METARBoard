@@ -51,4 +51,15 @@ rm -f "${HOME}/.config/chromium/SingletonLock" \
     --check-for-update-interval=31536000 \
     --password-store=basic \
     --start-fullscreen \
+    --remote-debugging-port=9223 \
+    --remote-debugging-address=127.0.0.1 \
     http://localhost:8500 &
+
+# --remote-debugging-port above is loopback-only (127.0.0.1, never exposed
+# on the network) and exists solely so chromium-watchdog.sh can tell a live
+# app tab apart from a crashed one - see that script for why lwrespawn alone
+# isn't enough. Referenced via the /opt/metarboard symlink (not a copied
+# path like this autostart file) so OTA updates carry watchdog fixes
+# automatically. Run via `sh` rather than direct exec so this doesn't
+# depend on the executable bit surviving a release tarball's extraction.
+sh /opt/metarboard/provisioning/chromium-watchdog.sh &

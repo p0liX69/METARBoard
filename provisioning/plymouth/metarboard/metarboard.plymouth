@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=METARBoard
+Description=METARBoard kiosk boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/metarboard
+ScriptFile=/usr/share/plymouth/themes/metarboard/metarboard.script

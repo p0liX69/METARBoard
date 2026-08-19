@@ -145,7 +145,19 @@ taskbar. This requires:
 
 After provisioning, `sudo reboot` and confirm the screen comes up directly
 in the fullscreen map view with no login prompt or desktop visible. If
-Chromium ever crashes, `lwrespawn` restarts it automatically.
+Chromium's whole process ever crashes, `lwrespawn` restarts it
+automatically.
+
+**Renderer-crash recovery:** `lwrespawn` can't see a crashed *tab* -
+Chromium's browser process and window stay alive and just show its "Aw,
+Snap!" interstitial (confirmed live: a reboot landed there and sat forever
+with no recovery). `chromium-watchdog.sh` runs alongside it, polling the
+page title over a loopback-only remote debugging port
+(`--remote-debugging-port=9223`, bound to `127.0.0.1`, never reachable off
+the device) and force-killing Chromium - so `lwrespawn` relaunches it - if
+the real app title (`METAR Board`) isn't showing after several consecutive
+checks. Verified live by forcing the same detect → kill → relaunch cycle
+on the test Pi and confirming the kiosk came back healthy each time.
 
 If the desktop user or `chromium` binary isn't found, `setup-pi.sh` skips
 this step and prints a warning — check that you flashed the desktop image
@@ -159,6 +171,27 @@ yet — that's the next thing to verify once it's hooked up to a real
 screen/TV. If it doesn't come up fullscreen on its own, check
 `~/.config/labwc/autostart` is still in place and that autologin is
 actually enabled (`raspi-config` → System Options → Boot / Auto Login).
+
+### Boot splash
+
+`setup-pi.sh` installs a custom Plymouth theme (`provisioning/plymouth/metarboard/`)
+so the boot screen shows the METARBoard mark on navy instead of the stock
+Raspberry Pi raspberries. The background color is set as the actual window
+background (not baked into the logo image), so it fills the screen
+edge-to-edge on any resolution/aspect the display reports.
+
+Re-applying it on an already-provisioned device (or after changing the
+logo/script) requires a full theme install + initramfs rebuild:
+
+```bash
+sudo mkdir -p /usr/share/plymouth/themes/metarboard
+sudo cp provisioning/plymouth/metarboard/* /usr/share/plymouth/themes/metarboard/
+sudo plymouth-set-default-theme -R metarboard
+```
+
+Like `~/.config/labwc/autostart`, this lives outside `/opt/metarboard` -
+OTA updates never touch it, so a device provisioned before this shipped
+needs this run once manually.
 
 ## 9. OTA updates
 

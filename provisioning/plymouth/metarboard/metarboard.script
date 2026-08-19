@@ -1,0 +1,13 @@
+# METARBoard kiosk boot splash. Navy fill (matches the setup wizard/admin
+# theme) set as the actual window background rather than baked into
+# splash.png, so it fills the whole screen edge-to-edge regardless of the
+# attached display's resolution/aspect - only the logo itself needs to be
+# sized right, not scaled to cover an unknown screen size.
+Window.SetBackgroundTopColor(0.059, 0.161, 0.259);
+Window.SetBackgroundBottomColor(0.059, 0.161, 0.259);
+
+logo_image = Image("splash.png");
+logo_sprite = Sprite(logo_image);
+logo_sprite.SetX(Window.GetWidth() / 2 - logo_image.GetWidth() / 2);
+logo_sprite.SetY(Window.GetHeight() / 2 - logo_image.GetHeight() / 2);
+logo_sprite.SetZ(100);

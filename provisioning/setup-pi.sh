@@ -120,6 +120,15 @@ systemctl enable --now metarboard-network-setup
 systemctl enable --now metarboard
 systemctl enable --now metarboard-update.timer
 
+echo "==> Installing METARBoard boot splash (if plymouth is present)"
+if [[ -x /usr/sbin/plymouth-set-default-theme ]]; then
+    mkdir -p /usr/share/plymouth/themes/metarboard
+    cp "${REPO_ROOT}/provisioning/plymouth/metarboard/"* /usr/share/plymouth/themes/metarboard/
+    /usr/sbin/plymouth-set-default-theme -R metarboard
+else
+    echo "    plymouth not found, skipping boot splash (stock OS splash will show instead)"
+fi
+
 echo "==> Configuring kiosk auto-start for desktop user '${DESKTOP_USER}' (if present)"
 if id "${DESKTOP_USER}" >/dev/null 2>&1 && [[ -x /usr/bin/chromium ]]; then
     DESKTOP_HOME="$(getent passwd "${DESKTOP_USER}" | cut -d: -f6)"
