@@ -20,6 +20,7 @@
     "showLightning": true,
     "showSigmets": true,
     "showAirmets": true,
+    "showStormMotion": true,
     "adminPasswordHash": null,
     "showRadarByDefault": true,
     "debug": false,

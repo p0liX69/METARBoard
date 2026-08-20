@@ -11,6 +11,7 @@
     "express": "^4.17.2",
     "fast-xml-parser": "^4.0.3",
     "serve-favicon": "^2.5.0",
+    "shpjs": "^6.2.0",
     "ws": "^8.5.0",
     "xmlhttprequest": "^1.8.0"
   },

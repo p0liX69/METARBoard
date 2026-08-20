@@ -331,6 +331,76 @@ async function fetchAirmets() {
     }
 }
 
+const STORM_CELL_REFRESH_MS = 90 * 1000;
+const STORM_CELL_ICON_SCALE = 0.26;
+
+/**
+ * Fetch live NEXRAD storm-cell attributes (via the server-side /stormcells
+ * proxy) and render each as a small gray arrow rotated to its reported
+ * motion direction - this is the NWS's own SCIT storm-tracking output
+ * (see server.js), not anything computed from the radar imagery here.
+ */
+async function fetchStormCells() {
+    if (settings && settings.showStormMotion === false) {
+        stormCellFeatures.clear();
+        return;
+    }
+
+    try {
+        const response = await fetch(URL_GET_STORM_CELLS);
+        const geojson = await response.json();
+        const features = new ol.format.GeoJSON().readFeatures(geojson, {
+            featureProjection: 'EPSG:3857'
+        });
+        // A calm/stationary cell (SKNT 0) has no meaningful heading - drop
+        // it rather than draw an arrow pointing due north.
+        const movingCells = features.filter((feature) => {
+            const direction = feature.get("direction");
+            const speedKt = feature.get("speedKt");
+            return Number.isFinite(direction) && Number.isFinite(speedKt) && speedKt > 0;
+        });
+        movingCells.forEach((feature) => {
+            feature.set("datatype", "stormcell");
+            // DRCT is the direction storm motion is FROM (meteorological/
+            // wind convention), not the heading it's moving TOWARD -
+            // confirmed empirically by comparing a cell's actual radar
+            // echo position now vs. 30 minutes ago (it moved opposite
+            // its raw DRCT bearing) - so the arrow needs the reciprocal.
+            const rotation = (feature.get("direction") + 180) * Math.PI / 180;
+            feature.setStyle([
+                // A black outline ring (same technique as traffic icons,
+                // see TRAFFIC_OUTLINE_OFFSETS) - a plain gray arrow all but
+                // disappears against the sectional/radar's own busy colors
+                // without it.
+                ...STORM_CELL_OUTLINE_OFFSETS.map((displacement) => new ol.style.Style({
+                    image: new ol.style.Icon({
+                        src: `${URL_SERVER}/img/storm-motion-arrow.svg`,
+                        crossOrigin: 'anonymous',
+                        scale: STORM_CELL_ICON_SCALE,
+                        rotation,
+                        displacement,
+                        color: '#000000'
+                    })
+                })),
+                new ol.style.Style({
+                    image: new ol.style.Icon({
+                        src: `${URL_SERVER}/img/storm-motion-arrow.svg`,
+                        crossOrigin: 'anonymous',
+                        scale: STORM_CELL_ICON_SCALE,
+                        rotation,
+                        color: '#e0e0e0'
+                    })
+                })
+            ]);
+        });
+        stormCellFeatures.clear();
+        stormCellFeatures.extend(movingCells);
+    }
+    catch (err) {
+        console.log("Failed to load storm cell attributes:", err);
+    }
+}
+
 /**
  * Center on the saved home airport. If a previous map view (center/zoom)
  * was saved, that view is restored instead so routine calls (e.g. after a
@@ -429,6 +499,7 @@ let URL_GET_TFRS            = `${URL_SERVER}/tfrs`;
 let URL_GET_LIGHTNING       = `${URL_SERVER}/lightning`;
 let URL_GET_SIGMETS         = `${URL_SERVER}/sigmets`;
 let URL_GET_AIRMETS         = `${URL_SERVER}/airmets`;
+let URL_GET_STORM_CELLS     = `${URL_SERVER}/stormcells`;
 let URL_GET_WINDS_ALOFT     = `${URL_SERVER}/windsaloft`;
 let URL_GET_METAR_TREND     = `${URL_SERVER}/metartrend`;
 
@@ -548,6 +619,7 @@ let tfrFeatures = new ol.Collection();
 let lightningFeatures = new ol.Collection();
 let sigmetFeatures = new ol.Collection();
 let airmetFeatures = new ol.Collection();
+let stormCellFeatures = new ol.Collection();
 
 /**
  * Vector sources
@@ -562,6 +634,7 @@ let tfrVectorSource;
 let lightningVectorSource;
 let sigmetVectorSource;
 let airmetVectorSource;
+let stormCellVectorSource;
 
 /**
  * Vector layers
@@ -576,6 +649,7 @@ let tfrVectorLayer;
 let lightningVectorLayer;
 let sigmetVectorLayer;
 let airmetVectorLayer;
+let stormCellVectorLayer;
 
 /**
  * Tile layers
@@ -930,6 +1004,9 @@ async function loadInitialData() {
 
         fetchAirmets();
         setInterval(fetchAirmets, SIGMET_REFRESH_MS);
+
+        fetchStormCells();
+        setInterval(fetchStormCells, STORM_CELL_REFRESH_MS);
 
         fetchWeatherTrend();
         setInterval(fetchWeatherTrend, WEATHER_TREND_REFRESH_MS);
@@ -2662,6 +2739,18 @@ airmetVectorLayer = new ol.layer.Vector({
 });
 map.addLayer(airmetVectorLayer);
 
+stormCellVectorSource = new ol.source.Vector({
+    features: stormCellFeatures
+});
+stormCellVectorLayer = new ol.layer.Vector({
+    title: "Storm Motion",
+    source: stormCellVectorSource,
+    visible: true,
+    extent: extent,
+    zIndex: 13.2
+});
+map.addLayer(stormCellVectorLayer);
+
 sigmetVectorSource = new ol.source.Vector({
     features: sigmetFeatures
 });
@@ -3017,14 +3106,23 @@ const TRAFFIC_ICON_NATIVE_PX = 200;
 const TRAFFIC_ICON_SCALE = TRAFFIC_ICON_TARGET_PX / TRAFFIC_ICON_NATIVE_PX;
 
 // Pixel displacements (screen-space, applied after the icon's own
-// rotation) for the black-outline copies in processTraffic - 8 points
-// around a small ring gives an even outline in every direction without
-// the gaps a 4-point N/S/E/W-only ring leaves on the diagonals.
+// rotation) for a ring of black outline copies rendered behind an icon -
+// 8 points around a small ring gives an even outline in every direction
+// without the gaps a 4-point N/S/E/W-only ring leaves on the diagonals.
+function buildOutlineRingOffsets(radiusPx, pointCount = 8) {
+    return Array.from({ length: pointCount }, (_, i) => {
+        const angle = (i / pointCount) * 2 * Math.PI;
+        return [Math.cos(angle) * radiusPx, Math.sin(angle) * radiusPx];
+    });
+}
+
 const TRAFFIC_OUTLINE_RADIUS_PX = 3.5;
-const TRAFFIC_OUTLINE_OFFSETS = Array.from({ length: 8 }, (_, i) => {
-    const angle = (i / 8) * 2 * Math.PI;
-    return [Math.cos(angle) * TRAFFIC_OUTLINE_RADIUS_PX, Math.sin(angle) * TRAFFIC_OUTLINE_RADIUS_PX];
-});
+const TRAFFIC_OUTLINE_OFFSETS = buildOutlineRingOffsets(TRAFFIC_OUTLINE_RADIUS_PX);
+
+// Storm-motion arrows are much smaller/thinner than traffic icons, so a
+// tighter ring reads as a crisp outline instead of a blob.
+const STORM_CELL_OUTLINE_RADIUS_PX = 1.4;
+const STORM_CELL_OUTLINE_OFFSETS = buildOutlineRingOffsets(STORM_CELL_OUTLINE_RADIUS_PX);
 
 const TRAFFIC_ICON_BY_CATEGORY = {
     unknown: "traffic-unknown.svg",

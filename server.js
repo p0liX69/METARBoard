@@ -11,6 +11,12 @@ const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const { XMLParser } = require('fast-xml-parser');
 const { unzip, unzipSync } = require('zlib');
 
+// shpjs ships as an ESM-only package whose UMD fallback also assumes a
+// browser `self` global - `require('shpjs')` resolves to neither a usable
+// function nor module.exports under plain Node, so it's loaded lazily via
+// dynamic import() (see /stormcells below) instead of a top-level require.
+global.self = global.self || globalThis;
+
 /**
  * These objects are used by the XMLParser to convert XML to JSON.
  * The alwaysArray object makes the parser translate sky_condition 
@@ -173,6 +179,15 @@ const GAIRMET_URL = "https://aviationweather.gov/api/data/gairmet?format=geojson
 const SIGMET_CACHE_TTL_MS = 10 * 60 * 1000;
 let sigmetCache = { data: null, fetchedAt: 0 };
 let airmetCache = { data: null, fetchedAt: 0 };
+
+// Iowa State Mesonet (same provider as the n0q radar mosaic) republishes
+// the NWS's own per-radar-site SCIT storm-tracking output as one
+// nationwide point shapefile, regenerated every minute - this is already-
+// tracked motion (direction/speed per identified storm cell), so there's
+// no frame-differencing or tracking logic on our end, just relaying it.
+const NEXRAD_STORM_ATTRS_URL = "https://mesonet.agron.iastate.edu/data/gis/shape/4326/us/current_nexattr.zip";
+const STORM_CELL_CACHE_TTL_MS = 90 * 1000;
+let stormCellCache = { data: null, fetchedAt: 0 };
 
 // NWS/FAA public "FD" winds-and-temperatures-aloft text product. Fixed
 // station list of ~180 major airports (not every field), so the home
@@ -961,6 +976,7 @@ try {
         showLightning: (value) => (typeof value === "boolean" ? value : undefined),
         showSigmets: (value) => (typeof value === "boolean" ? value : undefined),
         showAirmets: (value) => (typeof value === "boolean" ? value : undefined),
+        showStormMotion: (value) => (typeof value === "boolean" ? value : undefined),
         fleetAircraft: (value) => {
             if (!Array.isArray(value)) return undefined;
             const tails = value
@@ -1243,6 +1259,52 @@ try {
             console.log("Failed to fetch G-AIRMETs:", err);
             res.writeHead(200);
             res.end(JSON.stringify(airmetCache.data || emptyCollection));
+        }
+    });
+
+    // Live NEXRAD storm-cell attributes (motion direction/speed, hail
+    // probability, VIL, echo top, etc.) - see NEXRAD_STORM_ATTRS_URL above.
+    app.get("/stormcells", async (req, res) => {
+        const emptyCollection = { type: "FeatureCollection", features: [] };
+
+        if (stormCellCache.data && Date.now() - stormCellCache.fetchedAt < STORM_CELL_CACHE_TTL_MS) {
+            res.writeHead(200);
+            res.end(JSON.stringify(stormCellCache.data));
+            return;
+        }
+
+        try {
+            const { default: shp } = await import('shpjs');
+            const response = await fetch(NEXRAD_STORM_ATTRS_URL);
+            const buffer = Buffer.from(await response.arrayBuffer());
+            const parsed = await shp(buffer);
+            const collection = Array.isArray(parsed) ? parsed[0] : parsed;
+            const features = (collection?.features || []).map((feature) => ({
+                type: "Feature",
+                geometry: feature.geometry,
+                properties: {
+                    id: feature.properties.STORM_ID,
+                    radar: feature.properties.NEXRAD,
+                    valid: feature.properties.VALID,
+                    direction: feature.properties.DRCT,
+                    speedKt: feature.properties.SKNT,
+                    maxDbz: feature.properties.MAX_DBZ,
+                    top: feature.properties.TOP,
+                    vil: feature.properties.VIL,
+                    poh: feature.properties.POH,
+                    posh: feature.properties.POSH,
+                    meso: feature.properties.MESO,
+                    tvs: feature.properties.TVS
+                }
+            }));
+            stormCellCache = { data: { type: "FeatureCollection", features }, fetchedAt: Date.now() };
+            res.writeHead(200);
+            res.end(JSON.stringify(stormCellCache.data));
+        }
+        catch (err) {
+            console.log("Failed to fetch NEXRAD storm cell attributes:", err);
+            res.writeHead(200);
+            res.end(JSON.stringify(stormCellCache.data || emptyCollection));
         }
     });
 
