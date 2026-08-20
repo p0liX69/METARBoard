@@ -652,6 +652,17 @@ try {
         return crypto.createHmac("sha256", adminPasswordHash).update(String(expiresAt)).digest("hex");
     }
 
+    // Buffer length must match for timingSafeEqual to even run - false on a
+    // length mismatch is safe here (a real digest is always a fixed
+    // length), it just means "definitely not equal" without the length
+    // check itself being a meaningful side channel to a fixed-format hash.
+    function timingSafeEqualStrings(a, b) {
+        const bufA = Buffer.from(String(a));
+        const bufB = Buffer.from(String(b));
+        if (bufA.length !== bufB.length) return false;
+        return crypto.timingSafeEqual(bufA, bufB);
+    }
+
     function isAdminAuthed(req) {
         if (!settings.adminPasswordHash) return true;
 
@@ -661,8 +672,7 @@ try {
         if (!Number.isFinite(expiresAt) || expiresAt < Date.now() || !signature) return false;
 
         const expected = signAdminSessionToken(settings.adminPasswordHash, expiresAt);
-        if (expected.length !== signature.length) return false;
-        return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+        return timingSafeEqualStrings(expected, signature);
     }
 
     function startAdminSession(res) {
@@ -670,6 +680,17 @@ try {
         const signature = signAdminSessionToken(settings.adminPasswordHash, expiresAt);
         res.setHeader("Set-Cookie", `metarboard_admin=${expiresAt}.${signature}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ADMIN_SESSION_TTL_MS / 1000}`);
     }
+
+    // In-memory, global (not per-IP) rate limit on admin login attempts -
+    // this is a single-shared-password LAN appliance, not a multi-tenant
+    // service, so a global lockout is simpler than per-IP tracking and
+    // still closes the actual gap: previously nothing stood between an
+    // attacker on the LAN and an unlimited-attempts online brute force.
+    const ADMIN_LOGIN_MAX_ATTEMPTS = 5;
+    const ADMIN_LOGIN_BASE_LOCKOUT_MS = 30 * 1000;
+    const ADMIN_LOGIN_MAX_LOCKOUT_MS = 15 * 60 * 1000;
+    let adminLoginFailures = 0;
+    let adminLoginLockedUntil = 0;
 
     app.get('/admin/session', (req, res) => {
         res.writeHead(200);
@@ -680,12 +701,30 @@ try {
     });
 
     app.post('/admin/login', (req, res) => {
+        if (Date.now() < adminLoginLockedUntil) {
+            res.writeHead(429);
+            res.end(JSON.stringify({ error: "Too many attempts - try again later" }));
+            return;
+        }
+
         const password = String(req.body?.password || "");
-        if (!settings.adminPasswordHash || hashPassword(password) !== settings.adminPasswordHash) {
+        const valid = !!settings.adminPasswordHash && timingSafeEqualStrings(hashPassword(password), settings.adminPasswordHash);
+        if (!valid) {
+            adminLoginFailures++;
+            if (adminLoginFailures >= ADMIN_LOGIN_MAX_ATTEMPTS) {
+                const lockoutMs = Math.min(
+                    ADMIN_LOGIN_BASE_LOCKOUT_MS * (2 ** (adminLoginFailures - ADMIN_LOGIN_MAX_ATTEMPTS)),
+                    ADMIN_LOGIN_MAX_LOCKOUT_MS
+                );
+                adminLoginLockedUntil = Date.now() + lockoutMs;
+            }
             res.writeHead(401);
             res.end(JSON.stringify({ error: "Incorrect password" }));
             return;
         }
+
+        adminLoginFailures = 0;
+        adminLoginLockedUntil = 0;
         startAdminSession(res);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
@@ -702,9 +741,9 @@ try {
         }
 
         const password = String(req.body?.password || "");
-        if (password.length < 4) {
+        if (password.length < 8) {
             res.writeHead(400);
-            res.end(JSON.stringify({ error: "Password must be at least 4 characters" }));
+            res.end(JSON.stringify({ error: "Password must be at least 8 characters" }));
             return;
         }
 
@@ -793,9 +832,21 @@ try {
         const adminPassword = String(req.body?.adminPassword || "");
         const displayNameSlug = slugifyHostname(req.body?.displayName);
 
-        if (!ssid) {
+        // Reachable by anyone in range of the open setup hotspot, not just
+        // the customer's own phone - execFile (not a shell) already rules
+        // out command injection, but these still become permanent
+        // NetworkManager connection-profile fields, so cap them to the
+        // real WiFi spec limits (32-byte SSID, 63-char WPA passphrase) and
+        // reject control characters rather than trusting arbitrary input.
+        const hasControlChars = (s) => /[\x00-\x1f\x7f]/.test(s);
+        if (!ssid || ssid.length > 32 || hasControlChars(ssid)) {
             res.writeHead(400);
-            res.end(JSON.stringify({ error: "A WiFi network is required" }));
+            res.end(JSON.stringify({ error: "A valid WiFi network name (up to 32 characters) is required" }));
+            return;
+        }
+        if (password.length > 63 || hasControlChars(password)) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "WiFi password must be 63 characters or fewer" }));
             return;
         }
         if (!homeAirport) {
@@ -803,9 +854,9 @@ try {
             res.end(JSON.stringify({ error: "Home airport must be a 3-4 character ICAO/FAA code" }));
             return;
         }
-        if (adminPassword.length < 4) {
+        if (adminPassword.length < 8) {
             res.writeHead(400);
-            res.end(JSON.stringify({ error: "Admin password must be at least 4 characters" }));
+            res.end(JSON.stringify({ error: "Admin password must be at least 8 characters" }));
             return;
         }
 
@@ -1077,15 +1128,28 @@ try {
     // lookup against the optional local aircraft database (see
     // provisioning/import-aircraft-db.js). Returns {} for every icao24 if
     // the database hasn't been imported.
+    // Unauthenticated (traffic lookups are read-only, low-value data), so
+    // the request body's array length is capped rather than trusted - a
+    // client sending a huge icao24s array would otherwise build/prepare
+    // an arbitrarily large SQL statement per request. A real traffic poll
+    // never needs more than a couple hundred unknown aircraft at once.
+    const AIRCRAFT_BATCH_MAX_ICAO24S = 500;
+    const aircraftBatchStmtByCount = new Map();
+
     app.post("/aircraft/batch", (req, res) => {
-        const icao24s = Array.isArray(req.body?.icao24s) ? req.body.icao24s : [];
+        const rawIcao24s = Array.isArray(req.body?.icao24s) ? req.body.icao24s : [];
+        const icao24s = rawIcao24s.slice(0, AIRCRAFT_BATCH_MAX_ICAO24S);
         const result = {};
 
         if (aircraftDb && icao24s.length > 0) {
-            const placeholders = icao24s.map(() => "?").join(",");
-            const stmt = aircraftDb.prepare(
-                `SELECT icao24, registration, manufacturer, model, operator, category FROM aircraft WHERE icao24 IN (${placeholders})`
-            );
+            let stmt = aircraftBatchStmtByCount.get(icao24s.length);
+            if (!stmt) {
+                const placeholders = icao24s.map(() => "?").join(",");
+                stmt = aircraftDb.prepare(
+                    `SELECT icao24, registration, manufacturer, model, operator, category FROM aircraft WHERE icao24 IN (${placeholders})`
+                );
+                aircraftBatchStmtByCount.set(icao24s.length, stmt);
+            }
             const sanitized = icao24s.map((v) => String(v).toLowerCase());
             for (const row of stmt.all(...sanitized)) {
                 result[row.icao24] = {

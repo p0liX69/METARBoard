@@ -962,9 +962,31 @@ updateSunPanel();
  * settings having been parsed), then open the websocket connection(s).
  */
 async function loadInitialData() {
+    // Everything below (radar/TFR/lightning setup, the websocket URL
+    // itself) depends on settings having actually loaded - previously a
+    // single failed fetch here (e.g. server.js not yet listening when
+    // Chromium launches at boot) left `settings` as its initial `{}`
+    // forever, silently skipping all of that setup and then opening the
+    // websocket against `ws://host:undefined` in a permanent reconnect
+    // loop with no path back except a manual power-cycle. A kiosk with no
+    // keyboard/mouse has no other recovery option, so this retries with
+    // capped backoff until it actually succeeds rather than giving up
+    // after one attempt.
+    let settingsRetryDelayMs = 1000;
+    while (true) {
+        try {
+            const response = await fetch(URL_GET_SETTINGS);
+            settings = JSON.parse(await response.text());
+            break;
+        }
+        catch (err) {
+            console.log(`Failed to load settings, retrying in ${settingsRetryDelayMs}ms:`, err);
+            await new Promise((resolve) => setTimeout(resolve, settingsRetryDelayMs));
+            settingsRetryDelayMs = Math.min(settingsRetryDelayMs * 2, 30000);
+        }
+    }
+
     try {
-        const response = await fetch(URL_GET_SETTINGS);
-        settings = JSON.parse(await response.text());
         MessageTypes = settings.messagetypes;
         DistanceUnits = settings.distanceunits;
         distanceunit = settings.distanceunit;
@@ -1143,8 +1165,13 @@ function connectStratuxTraffic() {
     let wsturl = settings.stratuxtrafficws.replace("[stratuxip]", settings.stratuxip);
     wsTraffic = new WebSocket(wsturl);
     wsTraffic.onmessage = function(evt){
-        let tdata = JSON.parse(evt.data);
-        addTrafficItem(tdata);
+        try {
+            let tdata = JSON.parse(evt.data);
+            addTrafficItem(tdata);
+        }
+        catch (err) {
+            console.log("Failed to process Stratux traffic message:", err);
+        }
     }
     wsTraffic.onerror = function(evt) {
         console.log("Stratux traffic websocket ERROR.");
@@ -1159,9 +1186,14 @@ function connectStratuxSituation() {
     let wssurl = settings.stratuxsituationws.replace("[stratuxip]", settings.stratuxip);
     wsSituation = new WebSocket(wssurl);
     wsSituation.onmessage = function(evt){
-        if (myairplane !== null) {
-            let sdata = JSON.parse(evt.data);
-            setOwnshipOrientation(sdata);
+        try {
+            if (myairplane !== null) {
+                let sdata = JSON.parse(evt.data);
+                setOwnshipOrientation(sdata);
+            }
+        }
+        catch (err) {
+            console.log("Failed to process Stratux situation message:", err);
         }
     }
     wsSituation.onerror = function(evt) {
@@ -1840,9 +1872,11 @@ function describeFlightCategory(cat) {
     let dewpC = metar.dewpoint_c;
     let temp = convertCtoF(metar.temp_c);
     let dewp = convertCtoF(metar.dewpoint_c);
-    let windir = metar.wind_dir_degrees;
-    let winspd = metar.wind_speed_kt + "";
-    let wingst = metar.wind_gust_kt + ""; 
+    // wind_dir_degrees is commonly absent for variable-wind ("VRB")
+    // reports while wind_speed_kt is still present - previously rendered
+    // as the literal string "undefined°" in the popup.
+    let windir = Number.isFinite(metar.wind_dir_degrees) ? `${metar.wind_dir_degrees}°` : "VRB";
+    let winspd = Number.isFinite(metar.wind_speed_kt) ? metar.wind_speed_kt : "--";
     let altim = getAltimeterSetting(metar.altim_in_hg);
     let vis = getDistanceUnits(metar.visibility_statute_mi);
     let wxcode = metar.wx_string !== undefined ? decodeWxDescriptions(metar.wx_string) : "";
@@ -1871,7 +1905,7 @@ function describeFlightCategory(cat) {
       <tr><td>Time:</td><td>${time}</td></tr>
       <tr><td>Temp:</td><td>${tempC} °C (${temp})</td></tr>
       <tr><td>Dewpoint:</td><td>${dewpC} °C (${dewp})</td></tr>
-      <tr><td>Wind:</td><td>${windir}° @ ${winspd} kt</td></tr>
+      <tr><td>Wind:</td><td>${windir} @ ${winspd} kt</td></tr>
       <tr><td>Altimeter:</td><td>${altim} inHg</td></tr>
       <tr><td>Visibility:</td><td>${vis}</td></tr>
       <tr><td>Sky cover:</td><td>${skyconditions || ""}</td></tr>
@@ -2438,7 +2472,7 @@ function processTraffic() {
  * @param {object} metarsobject: JSON object with LOTS of metars
  */
  function processMetars(metarsobject) {
-    let newmetars = metarsobject.response.data.METAR;
+    let newmetars = metarsobject?.response?.data?.METAR;
     if (newmetars !== undefined) {
         const seenStationIds = new Set();
         // Debug-only counters confirming the diff-rebuild is actually
@@ -2571,7 +2605,7 @@ function processTraffic() {
  * @param {object} tafsobject: JSON object with LOTS of tafs 
  */
 function processTafs(tafsobject) {
-    let newtafs = tafsobject.response.data.TAF;
+    let newtafs = tafsobject?.response?.data?.TAF;
     if (newtafs !== undefined) {
         tafFeatures.clear();
         try {
@@ -2599,7 +2633,7 @@ function processTafs(tafsobject) {
  * @param {object} pirepsobject: JSON object with LOTS of pireps 
  */
  function processPireps(pirepsobject) {
-    let newpireps = pirepsobject.response.data.AircraftReport;
+    let newpireps = pirepsobject?.response?.data?.AircraftReport;
     if (newpireps !== undefined) {
         pirepFeatures.clear();
         try {
@@ -3326,7 +3360,7 @@ updateInfo();
     let num = parseFloat(miles);
     let label = "mi";
     switch (distanceunit) {
-        case DistanceUnits.kilometers: 
+        case DistanceUnits.kilometers:
             num = miles * 1.609344;
             label = "km"
             break;
@@ -3335,6 +3369,9 @@ updateInfo();
             label = "nm";
             break;
     }
+    // A missing/non-numeric visibility (common for partial or foreign
+    // observations) would otherwise render the literal string "NaN mi".
+    if (!Number.isFinite(num)) return `-- ${label}`;
     return `${num.toFixed(1)} ${label}`;
 }
 
@@ -3346,7 +3383,10 @@ updateInfo();
 const convertCtoF = ((temp) => {
     if (temp == undefined) return "";
     let num = (temp * 9/5 + 32);
-    if (num === NaN || num === undefined) return "";
+    // `num === NaN` is always false in JS (NaN never equals anything,
+    // including itself) - was a no-op that let a non-numeric temp_c
+    // render as the literal string "NaN F°".
+    if (!Number.isFinite(num)) return "";
     else return `${num.toFixed(1)} F°`;
 });
 
@@ -3369,8 +3409,12 @@ const convertCtoF = ((temp) => {
         "AHRSGLoadMax": 1.0025976589458154,"AHRSLastAttitudeTime": "0001-01-03T18:43:51.53Z","AHRSStatus": 7
       }
     */
-    viewposition = ol.proj.fromLonLat([jsondata.GPSLongitude, jsondata.GPSLatitude]);
-    if (jsondata.GPSLongitude !== 0 && jsondata.GPSLatitude !== 0) {
+    // A partial/malformed situation message (missing GPS fields) would
+    // otherwise leave `undefined !== 0` true and set the ownship marker
+    // to a NaN position.
+    if (Number.isFinite(jsondata.GPSLongitude) && Number.isFinite(jsondata.GPSLatitude)
+        && jsondata.GPSLongitude !== 0 && jsondata.GPSLatitude !== 0) {
+        viewposition = ol.proj.fromLonLat([jsondata.GPSLongitude, jsondata.GPSLatitude]);
         myairplane.setOffset(offset);
         myairplane.setPosition(viewposition);
         lng = jsondata.GPSLongitude;
@@ -3452,6 +3496,9 @@ function formatZuluDate(zuludate) {
  */
 function getAltimeterSetting(altimeter) {
     let dbl = parseFloat(altimeter);
+    // A missing/non-numeric altimeter setting would otherwise render the
+    // literal string "NaN" in the METAR popup.
+    if (!Number.isFinite(dbl)) return "--";
     return dbl.toFixed(2).toString();
 }
 

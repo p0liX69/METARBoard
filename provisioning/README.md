@@ -137,10 +137,13 @@ and online map layer. Saving pushes a live-reload signal to the kiosk
 display over its existing WebSocket connection, so it updates on its own
 within a second or two — no need to touch the appliance.
 
-There's no auth on this page (by design, for LAN-only appliance use) — don't
-expose port 8500 to the open internet. For settings not covered by the admin
-page (Stratux IP, ports, etc.), edit `/opt/metarboard-data/settings.json` directly
-and `sudo systemctl restart metarboard`.
+The setup wizard has you set an admin password, which gates changes made
+through this page (a signed session cookie, rate-limited login) — but there's
+still no encryption in transit (plain HTTP) and no auth at all on a device
+that never went through setup, so don't expose port 8500 to the open
+internet regardless. For settings not covered by the admin page (Stratux IP,
+ports, etc.), edit `/opt/metarboard-data/settings.json` directly and
+`sudo systemctl restart metarboard`.
 
 ## 8. Kiosk display (no keyboard/mouse)
 

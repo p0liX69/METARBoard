@@ -380,7 +380,7 @@
           Protects the <code>/admin</code> settings page from anyone else on your network.
         </p>
         <label class="field-label" for="adminPassword">Admin Password</label>
-        <input type="password" id="adminPassword" placeholder="At least 4 characters">
+        <input type="password" id="adminPassword" placeholder="At least 8 characters">
       </div>
 
       <button id="connectBtn">
@@ -516,8 +516,8 @@
         setStatus("Home airport must be a 3-4 character ICAO/FAA code.", "error");
         return;
       }
-      if (adminPasswordInput.value.length < 4) {
-        setStatus("Admin password must be at least 4 characters.", "error");
+      if (adminPasswordInput.value.length < 8) {
+        setStatus("Admin password must be at least 8 characters.", "error");
         return;
       }
 

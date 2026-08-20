@@ -283,7 +283,7 @@
         <div id="bootstrapPasswordSection" style="display: none;">
           <p><strong>No admin password is set yet</strong> - anyone on this network can currently change these settings.</p>
           <label class="field-label" for="bootstrapPassword">Set an Admin Password</label>
-          <input type="password" id="bootstrapPassword" placeholder="At least 4 characters">
+          <input type="password" id="bootstrapPassword" placeholder="At least 8 characters">
           <button id="bootstrapPasswordBtn" type="button">Set Password</button>
           <div id="bootstrapPasswordStatus"></div>
         </div>
@@ -439,7 +439,7 @@
             Admin Access
           </div>
           <label class="field-label" for="changePassword">Change Admin Password</label>
-          <input type="password" id="changePassword" placeholder="At least 4 characters">
+          <input type="password" id="changePassword" placeholder="At least 8 characters">
           <button id="changePasswordBtn" type="button">Update Password</button>
           <div id="changePasswordStatus"></div>
         </div>
@@ -517,6 +517,7 @@
     }
 
     loginBtn.addEventListener("click", () => {
+      loginBtn.disabled = true;
       fetch("/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -528,15 +529,17 @@
           loginStatusEl.textContent = "";
           checkAdminSession();
         })
-        .catch((err) => { loginStatusEl.textContent = err.message; });
+        .catch((err) => { loginStatusEl.textContent = err.message; })
+        .finally(() => { loginBtn.disabled = false; });
     });
 
     bootstrapPasswordBtn.addEventListener("click", () => {
-      if (bootstrapPasswordInput.value.length < 4) {
-        bootstrapPasswordStatusEl.textContent = "Password must be at least 4 characters.";
+      if (bootstrapPasswordInput.value.length < 8) {
+        bootstrapPasswordStatusEl.textContent = "Password must be at least 8 characters.";
         bootstrapPasswordStatusEl.className = "error";
         return;
       }
+      bootstrapPasswordBtn.disabled = true;
       fetch("/admin/set-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -551,15 +554,17 @@
         .catch((err) => {
           bootstrapPasswordStatusEl.textContent = err.message;
           bootstrapPasswordStatusEl.className = "error";
-        });
+        })
+        .finally(() => { bootstrapPasswordBtn.disabled = false; });
     });
 
     changePasswordBtn.addEventListener("click", () => {
-      if (changePasswordInput.value.length < 4) {
-        changePasswordStatusEl.textContent = "Password must be at least 4 characters.";
+      if (changePasswordInput.value.length < 8) {
+        changePasswordStatusEl.textContent = "Password must be at least 8 characters.";
         changePasswordStatusEl.className = "error";
         return;
       }
+      changePasswordBtn.disabled = true;
       fetch("/admin/set-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -575,7 +580,8 @@
         .catch((err) => {
           changePasswordStatusEl.textContent = err.message;
           changePasswordStatusEl.className = "error";
-        });
+        })
+        .finally(() => { changePasswordBtn.disabled = false; });
     });
 
     checkAdminSession();
@@ -663,6 +669,7 @@
         return;
       }
 
+      saveBtn.disabled = true;
       fetch("/savesettings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -693,7 +700,8 @@
           return res.json();
         })
         .then(() => setStatus("Saved - the display will refresh shortly.", false))
-        .catch(err => setStatus("Failed to save: " + err.message, true));
+        .catch(err => setStatus("Failed to save: " + err.message, true))
+        .finally(() => { saveBtn.disabled = false; });
     });
     }
   </script>
