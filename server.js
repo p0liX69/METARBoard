@@ -567,10 +567,18 @@ let app = express();
 try {
     app.use(express.urlencoded({ extended: true }));
     app.use(express.json({}));
-    app.use(cors());
+    // No app-wide cors() - this app has no legitimate cross-origin use
+    // case of its own (every fetch() in renderer.js/admin.html/setup.html
+    // targets its own origin), so a blanket wildcard would only let some
+    // other website on the same LAN cross-origin-read this device's
+    // settings/tile/admin routes for no benefit. tools/fleet-status.html
+    // is the one real exception - a dashboard meant to be opened from a
+    // different origin than the devices it polls - so CORS is applied
+    // narrowly to just the two read-only routes it actually needs
+    // (/health, /updatestatus below), not everything.
     app.use(favicon(`${__dirname }/images/favicon.png`));
     console.log(`Server listening on port ${settings.httpport}`);
-    app.listen(settings.httpport, '0.0.0.0'); 
+    app.listen(settings.httpport, '0.0.0.0');
 
     let appOptions = {
         dotfiles: 'ignore',
@@ -580,9 +588,6 @@ try {
         redirect: false,
         setHeaders: function (res, path, stat) {
             res.set('x-timestamp', Date.now());
-            res.setHeader("Access-Control-Allow-Origin", "*");
-            res.setHeader('Access-Control-Allow-Methods', '*');
-            res.setHeader("Access-Control-Allow-Headers", "*");
         }
     };
 
@@ -644,8 +649,34 @@ try {
         return match ? match.slice(name.length + 1) : null;
     }
 
-    function hashPassword(password) {
+    // Legacy format (still readable, never newly written): a bare SHA-256
+    // hex digest, unsalted. New format: "scrypt:<saltHex>:<hashHex>" -
+    // scrypt is deliberately slow/memory-hard, unlike SHA-256, and the
+    // salt means two devices (or a password reused elsewhere) don't
+    // produce the same stored hash. Every new/changed password is stored
+    // in the new format; an existing legacy hash is transparently
+    // upgraded the next time its owner logs in successfully (see
+    // /admin/login) - no forced reset, no action needed from an existing
+    // install.
+    function hashPasswordLegacy(password) {
         return crypto.createHash("sha256").update(password).digest("hex");
+    }
+
+    function hashPasswordForStorage(password) {
+        const salt = crypto.randomBytes(16).toString("hex");
+        const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+        return `scrypt:${salt}:${hash}`;
+    }
+
+    function verifyPassword(password, stored) {
+        if (!stored) return false;
+        if (stored.startsWith("scrypt:")) {
+            const parts = stored.split(":");
+            if (parts.length !== 3) return false;
+            const [, salt, hash] = parts;
+            return timingSafeEqualStrings(crypto.scryptSync(password, salt, 64).toString("hex"), hash);
+        }
+        return timingSafeEqualStrings(hashPasswordLegacy(password), stored);
     }
 
     function signAdminSessionToken(adminPasswordHash, expiresAt) {
@@ -708,7 +739,7 @@ try {
         }
 
         const password = String(req.body?.password || "");
-        const valid = !!settings.adminPasswordHash && timingSafeEqualStrings(hashPassword(password), settings.adminPasswordHash);
+        const valid = verifyPassword(password, settings.adminPasswordHash);
         if (!valid) {
             adminLoginFailures++;
             if (adminLoginFailures >= ADMIN_LOGIN_MAX_ATTEMPTS) {
@@ -725,6 +756,13 @@ try {
 
         adminLoginFailures = 0;
         adminLoginLockedUntil = 0;
+        // Transparently upgrade a legacy unsalted hash to the new salted
+        // scrypt format on successful login - this is the only place the
+        // plaintext password is available for an existing install, so
+        // there's no forced-reset migration needed.
+        if (!settings.adminPasswordHash.startsWith("scrypt:")) {
+            writeSettings({ ...settings, adminPasswordHash: hashPasswordForStorage(password) });
+        }
         startAdminSession(res);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
@@ -747,7 +785,7 @@ try {
             return;
         }
 
-        writeSettings({ ...settings, adminPasswordHash: hashPassword(password) });
+        writeSettings({ ...settings, adminPasswordHash: hashPasswordForStorage(password) });
         startAdminSession(res);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
@@ -897,7 +935,7 @@ try {
                         return;
                     }
 
-                    const newSettings = { ...settings, homeAirport, adminPasswordHash: hashPassword(adminPassword) };
+                    const newSettings = { ...settings, homeAirport, adminPasswordHash: hashPasswordForStorage(adminPassword) };
                     if (timezone) newSettings.timezone = timezone;
                     writeSettings(newSettings);
 
@@ -951,7 +989,7 @@ try {
     // release could otherwise "start" against a corrupt settings file and
     // still look alive. Chart/aircraft DB status is reported but doesn't
     // affect the health verdict - both are legitimately optional.
-    app.get("/health", (req, res) => {
+    app.get("/health", cors(), (req, res) => {
         let settingsLoaded = false;
         try {
             JSON.parse(fs.readFileSync(`${DATA_DIR}/settings.json`));
@@ -973,7 +1011,7 @@ try {
 
     // Last OTA update check/result, written by check-for-update.sh, so
     // Todd (or a customer) can see fleet health from /admin without SSH.
-    app.get("/updatestatus", (req, res) => {
+    app.get("/updatestatus", cors(), (req, res) => {
         try {
             const rawdata = fs.readFileSync(`${DATA_DIR}/update-status.json`);
             res.writeHead(200);
@@ -1553,7 +1591,21 @@ try {
         getPositionHistory(res);
     });
 
+    // Unauthenticated by design (same posture as the rest of the app),
+    // but previously accepted any lat/lon/heading/altitude with zero
+    // validation - trivial to write garbage into positionhistory.db.
+    // Cheap range checks, still no auth required.
     app.post("/savehistory", (req, res) => {
+        const { longitude, latitude, heading, altitude } = req.body || {};
+        const valid = Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
+            && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+            && Number.isFinite(heading) && heading >= 0 && heading <= 360
+            && Number.isFinite(altitude) && altitude >= -1500 && altitude <= 60000;
+        if (!valid) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "Invalid position data" }));
+            return;
+        }
         savePositionHistory(req.body);
         res.writeHead(200);
         res.end();
@@ -1824,9 +1876,6 @@ async function downloadXmlFile(source) {
     let url = settings.addscurrentxmlurl.replace(source.token, source.type);
     xhr.open('GET', url, true);
     xhr.setRequestHeader('Content-Type', 'text/csv');
-    xhr.setRequestHeader("Access-Control-Allow-Origin", "*");
-    xhr.setRequestHeader('Access-Control-Allow-Methods', '*');
-    xhr.setRequestHeader("Access-Control-Allow-Headers", "*");
     // 'text' (not 'document') - the xmlhttprequest package's 'document'
     // mode does its own internal DOM parse of the response that's then
     // thrown away in favor of xmlparser.parse() below, parsing the same
