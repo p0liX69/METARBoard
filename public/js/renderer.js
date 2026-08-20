@@ -2906,6 +2906,25 @@ if (settings.savepositionhistory) {
 // (see showLatestRadarFrame/advanceRadarFrame) keeps working unchanged.
 const N0Q_OFFSET_SUFFIXES = ['-m55m', '-m50m', '-m45m', '-m40m', '-m35m', '-m30m', '-m25m', '-m20m', '-m15m', '-m10m', '-m05m', ''];
 
+// Confirmed live: Iowa State's WMS occasionally returns a blank/errored
+// response for a single tile in the grid (verified the mosaic itself has
+// no actual gap by pulling the same area as one plain GetMap request) -
+// without a retry, that tile just sits blank as a hard-edged gap in the
+// radar overlay until the next full 5-minute frame rebuild. A couple of
+// short-delayed retries clears it almost immediately instead.
+const TILE_LOAD_MAX_RETRIES = 3;
+const TILE_LOAD_RETRY_DELAY_MS = 1500;
+
+function retryFailedTileLoads(source) {
+    source.on('tileloaderror', (event) => {
+        const tile = event.tile;
+        tile.retryCount = (tile.retryCount || 0) + 1;
+        if (tile.retryCount <= TILE_LOAD_MAX_RETRIES) {
+            setTimeout(() => tile.load(), TILE_LOAD_RETRY_DELAY_MS * tile.retryCount);
+        }
+    });
+}
+
 function setupRadarAnimation() {
     const STEP_MS = 5 * 60 * 1000;
     const now = Date.now();
@@ -2918,6 +2937,7 @@ function setupRadarAnimation() {
             url: settings.animatedwxurl,
             params: { 'LAYERS': `nexrad-n0q${suffix}` }
         });
+        retryFailedTileLoads(source);
         const layer = new ol.layer.Tile({
             title: 'Radar',
             extent: extent,
