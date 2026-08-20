@@ -55,7 +55,15 @@ cp "${REPO_ROOT}/provisioning/labwc-system-autostart" /etc/xdg/labwc/autostart
 mkdir -p /usr/share/icons/metarboard-blank
 cp -R "${REPO_ROOT}/provisioning/metarboard-blank-cursor/." /usr/share/icons/metarboard-blank/
 ENV_FILE="${DESKTOP_HOME}/.config/labwc/environment"
-if [[ -f "${ENV_FILE}" ]] && ! grep -q '^XCURSOR_THEME=' "${ENV_FILE}"; then
+# Create it if missing (e.g. a device provisioned before this file was
+# ever expected to exist) instead of silently skipping the cursor fix
+# forever - the whole point of calling this script on every OTA update is
+# to reach exactly those older devices.
+if [[ ! -f "${ENV_FILE}" ]]; then
+    : > "${ENV_FILE}"
+    chown "${DESKTOP_USER}:${DESKTOP_USER}" "${ENV_FILE}"
+fi
+if ! grep -q '^XCURSOR_THEME=' "${ENV_FILE}"; then
     printf '\nXCURSOR_THEME=metarboard-blank\nXCURSOR_SIZE=32\n' >> "${ENV_FILE}"
     chown "${DESKTOP_USER}:${DESKTOP_USER}" "${ENV_FILE}"
 fi

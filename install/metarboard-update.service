@@ -6,4 +6,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=root
+# No override here means systemd's default 90s governs the ENTIRE script -
+# download, minisign verify, npm ci (with its own up-to-3-attempt/10-30s
+# backoff retry), and the health-check poll loop can easily exceed that on
+# a Pi. A timeout here mid-run can SIGTERM the script after the symlink
+# swap but before the health check/rollback logic ever runs, leaving a
+# never-verified release live with no rollback having occurred.
+TimeoutStartSec=900
 ExecStart=/opt/metarboard/provisioning/check-for-update.sh

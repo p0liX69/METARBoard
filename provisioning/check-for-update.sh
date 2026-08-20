@@ -25,6 +25,12 @@ RELEASES_DIR="/opt/metarboard-releases"
 DATA_DIR="/opt/metarboard-data"
 RELEASE_PUBKEY="${RELEASES_DIR}/metarboard-release.pub"
 CURRENT_VERSION_FILE="${DATA_DIR}/CURRENT_VERSION"
+# Only ever written after a release has actually passed its health check
+# (see the success branch below) - unlike PREVIOUS_TARGET (just "whatever
+# was live a moment ago"), this can't point at a release that was itself
+# swapped in but never verified, e.g. because this script got killed
+# between the symlink swap and the health check on a prior run.
+LAST_KNOWN_GOOD_FILE="${DATA_DIR}/LAST_KNOWN_GOOD"
 STATUS_FILE="${DATA_DIR}/update-status.json"
 SERVICE_USER="metarboard"
 KEEP_RELEASES=2
@@ -88,7 +94,7 @@ WORKDIR="$(mktemp -d /tmp/metarboard-update.XXXXXX)"
 trap 'rm -rf "${WORKDIR}"' EXIT
 
 log "checking ${METARBOARD_RELEASES_REPO} for the latest release"
-if ! curl -fsSL "https://api.github.com/repos/${METARBOARD_RELEASES_REPO}/releases/latest" -o "${WORKDIR}/latest.json"; then
+if ! curl -fsSL --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${METARBOARD_RELEASES_REPO}/releases/latest" -o "${WORKDIR}/latest.json"; then
     fail "could not reach GitHub releases API"
 fi
 
@@ -123,11 +129,19 @@ if (( FREE_KB < MIN_FREE_KB )); then
     fail "insufficient disk space on /opt (${FREE_KB}KB free, need ${MIN_FREE_KB}KB)"
 fi
 
+# WORKDIR (the download staging area) lives under /tmp, a separate
+# filesystem from /opt on some setups (e.g. tmpfs) - checking only /opt
+# above gives false confidence that a large download will actually fit.
+TMP_FREE_KB="$(df --output=avail "$(dirname "${WORKDIR}")" | tail -1 | tr -d ' ')"
+if (( TMP_FREE_KB < MIN_FREE_KB )); then
+    fail "insufficient disk space in $(dirname "${WORKDIR}") for staging (${TMP_FREE_KB}KB free, need ${MIN_FREE_KB}KB)"
+fi
+
 TARBALL="${WORKDIR}/release.tar.gz"
 SIGFILE="${WORKDIR}/release.tar.gz.minisig"
 log "downloading release assets"
-curl -fsSL "${TARBALL_URL}" -o "${TARBALL}" || fail "failed to download tarball"
-curl -fsSL "${SIG_URL}" -o "${SIGFILE}" || fail "failed to download signature"
+curl -fsSL --connect-timeout 10 --max-time 120 "${TARBALL_URL}" -o "${TARBALL}" || fail "failed to download tarball"
+curl -fsSL --connect-timeout 10 --max-time 30 "${SIG_URL}" -o "${SIGFILE}" || fail "failed to download signature"
 
 # Verify BEFORE trusting anything about the downloaded file - never
 # extract/inspect it first and treat the signature as a bonus check.
@@ -178,7 +192,7 @@ log "health-checking new release"
 HEALTHY=0
 for ((i = 0; i < HEALTH_CHECK_RETRIES; i++)); do
     sleep "${HEALTH_CHECK_DELAY_SEC}"
-    if curl -fsS "http://localhost:8500/health" >/dev/null 2>&1; then
+    if curl -fsS --connect-timeout 3 --max-time 5 "http://localhost:8500/health" >/dev/null 2>&1; then
         HEALTHY=1
         break
     fi
@@ -190,6 +204,9 @@ if [[ "${HEALTHY}" -eq 1 ]]; then
     mkdir -p "${DATA_DIR}"
     echo -n "${LATEST_TAG}" > "${tmp_version}"
     mv -f "${tmp_version}" "${CURRENT_VERSION_FILE}"
+    tmp_lkg="${LAST_KNOWN_GOOD_FILE}.tmp"
+    echo -n "${NEW_RELEASE_DIR}" > "${tmp_lkg}"
+    mv -f "${tmp_lkg}" "${LAST_KNOWN_GOOD_FILE}"
     write_status "success" "Updated to ${LATEST_TAG}" "${LATEST_TAG}"
 
     # setup-pi.sh's kiosk-provisioning steps (wait-loop, loading
@@ -213,9 +230,18 @@ if [[ "${HEALTHY}" -eq 1 ]]; then
 fi
 
 log "health check failed - rolling back"
+# Prefer the last release that actually PASSED a health check over
+# PREVIOUS_TARGET (just "whatever was live a moment ago") - if a prior run
+# was killed after swapping in a release but before health-checking it,
+# PREVIOUS_TARGET would point at that same never-verified release, and
+# "rolling back" to it would be rolling back to nothing.
+ROLLBACK_TARGET="$(cat "${LAST_KNOWN_GOOD_FILE}" 2>/dev/null || true)"
+if [[ -z "${ROLLBACK_TARGET}" || ! -d "${ROLLBACK_TARGET}" ]]; then
+    ROLLBACK_TARGET="${PREVIOUS_TARGET}"
+fi
 ROLLBACK_RESTARTED=0
-if [[ -n "${PREVIOUS_TARGET}" && -d "${PREVIOUS_TARGET}" ]]; then
-    ln -sfn "${PREVIOUS_TARGET}" "${WORKDIR}/metarboard-link"
+if [[ -n "${ROLLBACK_TARGET}" && -d "${ROLLBACK_TARGET}" ]]; then
+    ln -sfn "${ROLLBACK_TARGET}" "${WORKDIR}/metarboard-link"
     mv -Tf "${WORKDIR}/metarboard-link" "${INSTALL_DIR}"
     systemctl reset-failed metarboard || true
     if systemctl restart metarboard; then
@@ -225,7 +251,7 @@ if [[ -n "${PREVIOUS_TARGET}" && -d "${PREVIOUS_TARGET}" ]]; then
 fi
 rm -rf "${NEW_RELEASE_DIR}"
 if [[ "${ROLLBACK_RESTARTED}" -eq 1 ]]; then
-    fail "release ${LATEST_TAG} failed its health check - rolled back to ${CURRENT_VERSION}"
+    fail "release ${LATEST_TAG} failed its health check - rolled back to ${ROLLBACK_TARGET}"
 else
     fail "release ${LATEST_TAG} failed its health check AND the rollback restart also failed - device may be down, needs manual intervention"
 fi

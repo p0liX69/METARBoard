@@ -28,11 +28,28 @@ if [[ -f "${HOSTNAME_FLAG}" ]]; then
     exit 0
 fi
 
+# A serial made of one repeated character (all-zero, all-f, etc.) is a
+# strong signal of unprogrammed/erased OTP fuses on this specific unit,
+# not a genuinely unique value - a real failure mode on some boards, and
+# one that would otherwise reproduce this exact mDNS-collision bug (every
+# such unit landing on the identical hostname again) since an empty-string
+# check alone doesn't catch it.
+is_degenerate_suffix() {
+    local s="$1"
+    [[ -z "${s}" ]] && return 0
+    local first="${s:0:1}"
+    local stripped="${s//${first}/}"
+    [[ -z "${stripped}" ]]
+}
+
 # The CPU serial is present on every real Raspberry Pi and never changes -
 # a much simpler and more universally-available source of per-device
 # uniqueness than trying to key off a specific network interface's MAC
 # (which may not exist yet this early in boot, e.g. Ethernet only).
 SUFFIX="$(awk '/^Serial/ {print $3}' /proc/cpuinfo 2>/dev/null | tail -c 7)"
+if is_degenerate_suffix "${SUFFIX}"; then
+    SUFFIX=""
+fi
 
 if [[ -z "${SUFFIX}" ]]; then
     # Not real Pi hardware (e.g. a dev/test environment) - fall back to
@@ -40,6 +57,9 @@ if [[ -z "${SUFFIX}" ]]; then
     # unique per boot either way; only real hardware needs the stable,
     # reboot-proof serial-derived value above.
     SUFFIX="$(cat /sys/class/net/wlan0/address 2>/dev/null | tr -d ':' | tail -c 7)"
+    if is_degenerate_suffix "${SUFFIX}"; then
+        SUFFIX=""
+    fi
 fi
 if [[ -z "${SUFFIX}" ]]; then
     SUFFIX="$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')"

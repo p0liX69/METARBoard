@@ -27,8 +27,21 @@ WIFI_IFNAME="wlan0"
 
 mkdir -p "${DATA_DIR}"
 
-connectivity="$(nmcli -t -f CONNECTIVITY general status 2>/dev/null || echo unknown)"
-echo "[network-setup-check] connectivity: ${connectivity}"
+# `nmcli general status CONNECTIVITY` is a single point-in-time read with
+# no wait for DHCP to finish, and reports "unknown" unless
+# connectivity.uri is configured in NetworkManager.conf - either gap can
+# read as "no connectivity" on a device that's actually fine, just not
+# finished negotiating yet this early in boot. A short poll avoids
+# needlessly starting the setup hotspot on a working device.
+connectivity=unknown
+for attempt in 1 2 3; do
+    connectivity="$(nmcli -t -f CONNECTIVITY general status 2>/dev/null || echo unknown)"
+    echo "[network-setup-check] connectivity (attempt ${attempt}): ${connectivity}"
+    if [[ "${connectivity}" == "full" || "${connectivity}" == "limited" ]]; then
+        break
+    fi
+    sleep 3
+done
 
 if [[ "${connectivity}" == "full" || "${connectivity}" == "limited" ]]; then
     echo "[network-setup-check] already connected - no setup needed"
@@ -38,18 +51,46 @@ fi
 
 echo "[network-setup-check] no connectivity - starting open setup hotspot"
 
+# Every nmcli call below is explicitly checked (not left to `set -e`) so a
+# failure here (radio soft-blocked, wlan0 not ready yet, no regulatory
+# domain set) can't silently kill the script BEFORE the flag file gets
+# written. Previously that would leave a non-technical customer with no
+# network, no hotspot, and no visible setup wizard - just the plain map
+# stuck showing nothing useful, with zero diagnostic trail and no
+# keyboard/monitor to debug with.
+HOTSPOT_OK=1
 if ! nmcli -t -f NAME connection show --active | grep -qxF "${HOTSPOT_CON_NAME}"; then
     if nmcli -t -f NAME connection show | grep -qxF "${HOTSPOT_CON_NAME}"; then
-        nmcli connection delete "${HOTSPOT_CON_NAME}"
+        nmcli connection delete "${HOTSPOT_CON_NAME}" || echo "[network-setup-check] warning: failed to delete stale hotspot profile" >&2
     fi
-    nmcli connection add type wifi ifname "${WIFI_IFNAME}" con-name "${HOTSPOT_CON_NAME}" \
-        autoconnect no ssid "${HOTSPOT_SSID}"
-    nmcli connection modify "${HOTSPOT_CON_NAME}" \
+    if ! nmcli connection add type wifi ifname "${WIFI_IFNAME}" con-name "${HOTSPOT_CON_NAME}" \
+        autoconnect no ssid "${HOTSPOT_SSID}"; then
+        echo "[network-setup-check] failed to create hotspot connection profile" >&2
+        HOTSPOT_OK=0
+    fi
+    if [[ "${HOTSPOT_OK}" -eq 1 ]] && ! nmcli connection modify "${HOTSPOT_CON_NAME}" \
         802-11-wireless.mode ap \
         802-11-wireless.band bg \
-        ipv4.method shared
-    nmcli connection up "${HOTSPOT_CON_NAME}"
+        ipv4.method shared; then
+        echo "[network-setup-check] failed to configure hotspot connection" >&2
+        HOTSPOT_OK=0
+    fi
+    if [[ "${HOTSPOT_OK}" -eq 1 ]] && ! nmcli connection up "${HOTSPOT_CON_NAME}"; then
+        echo "[network-setup-check] hotspot didn't come up on first try, retrying once..." >&2
+        sleep 3
+        if ! nmcli connection up "${HOTSPOT_CON_NAME}"; then
+            echo "[network-setup-check] failed to bring up hotspot" >&2
+            HOTSPOT_OK=0
+        fi
+    fi
 fi
 
+# Flag setup mode regardless of whether the hotspot itself came up, so
+# the wizard/error state is at least visible instead of silently falling
+# through to the normal map view.
 touch "${FLAG_FILE}"
-echo "[network-setup-check] setup mode active - hotspot '${HOTSPOT_SSID}' (open) is up"
+if [[ "${HOTSPOT_OK}" -eq 1 ]]; then
+    echo "[network-setup-check] setup mode active - hotspot '${HOTSPOT_SSID}' (open) is up"
+else
+    echo "[network-setup-check] setup mode active but hotspot failed to start - device may be unreachable over WiFi, needs manual/wired intervention" >&2
+fi

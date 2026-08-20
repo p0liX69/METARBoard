@@ -106,9 +106,12 @@ chown -R "${SERVICE_USER}:${SERVICE_USER}" "${LOCAL_RELEASE_DIR}" "${DATA_DIR}"
 
 echo "==> Pointing ${INSTALL_DIR} at ${LOCAL_RELEASE_DIR}"
 ln -sfn "${LOCAL_RELEASE_DIR}" "${INSTALL_DIR}"
-if [[ ! -f "${DATA_DIR}/CURRENT_VERSION" ]]; then
-    echo -n "${VERSION}" > "${DATA_DIR}/CURRENT_VERSION"
-fi
+# Always write this to match what's actually running, not just on first
+# provisioning - check-for-update.sh reads this file to decide whether an
+# OTA update is needed, so re-running setup-pi.sh after a version bump
+# without updating it would leave the OTA logic comparing against a
+# version number that no longer matches the installed release.
+echo -n "${VERSION}" > "${DATA_DIR}/CURRENT_VERSION"
 
 echo "==> Installing the first-boot network setup + hostname polkit rules"
 cp "${REPO_ROOT}/install/50-metarboard-network.rules" /etc/polkit-1/rules.d/50-metarboard-network.rules

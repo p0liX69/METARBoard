@@ -608,6 +608,11 @@ loadSkyConditionmKeymap();
  * metars, tafs, airport info, etc.
  */
 let metarFeatures = new ol.Collection();
+// Per-station cache backing processMetars()'s diff-based rebuild - a
+// station whose raw_text hasn't changed since last refresh gets its
+// existing Feature reused untouched instead of a full SVG/style rebuild.
+const metarFeatureByStationId = new Map();
+const metarRawTextByStationId = new Map();
 let airportFeatures = new ol.Collection();
 let tafFeatures = new ol.Collection();
 let pirepFeatures = new ol.Collection();
@@ -2435,29 +2440,38 @@ function processTraffic() {
  function processMetars(metarsobject) {
     let newmetars = metarsobject.response.data.METAR;
     if (newmetars !== undefined) {
-        metarFeatures.clear();
-        let scaleSize = getScaleSize();
+        const seenStationIds = new Set();
+        // Debug-only counters confirming the diff-rebuild is actually
+        // skipping unchanged stations, queryable via
+        // window.__metarRebuildStats from a devtools/CDP session.
+        window.__metarRebuildStats = { rebuilt: 0, skipped: 0 };
         try {
             newmetars.forEach((metar) => {
+                const stationId = metar.station_id;
+                if (!stationId) return;
+                seenStationIds.add(stationId);
+
+                if (metarRawTextByStationId.get(stationId) === metar.raw_text) {
+                    // Same observation as last cycle - refresh the data
+                    // object (for anything reading richer fields) but skip
+                    // the expensive SVG/style rebuild below.
+                    const existing = metarFeatureByStationId.get(stationId);
+                    if (existing) existing.set("metar", metar);
+                    window.__metarRebuildStats.skipped++;
+                    return;
+                }
+
                 let svg = "";
-                let svg2 = "";
-                try { 
+                try {
                     svg = rawMetarToSVG(metar.raw_text, 150, 150, settings.usemetricunits);
-                    svg2 = getWindBarbSvg(95, 95, metar); 
                 }
                 catch { }
-                  
-                let metarFeature = new ol.Feature({
-                    metar: metar,
-                    datatype: "metar",
-                    geometry: new ol.geom.Point(ol.proj.fromLonLat([metar.longitude, metar.latitude])),
-                    svgimage: svg 
-                });
+
                 let cat = metar.flight_category;
                 let styleColor;
                 switch (cat) {
                     case "VFR":
-                        styleColor = "rgba(9, 236, 74, 0.9)"; 
+                        styleColor = "rgba(9, 236, 74, 0.9)";
                         break;
                     case "MVFR":
                         styleColor = "rgba(7, 99, 247, 0.9)";
@@ -2479,11 +2493,38 @@ function processTraffic() {
                         stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
                     })
                 });
-                metarFeature.setStyle(markerStyle);
-                metarFeature.setId(metar.station_id);
-                metarFeatures.push(metarFeature);
+
+                let metarFeature = metarFeatureByStationId.get(stationId);
+                if (metarFeature) {
+                    metarFeature.set("metar", metar);
+                    metarFeature.set("svgimage", svg);
+                    metarFeature.setStyle(markerStyle);
+                }
+                else {
+                    metarFeature = new ol.Feature({
+                        metar: metar,
+                        datatype: "metar",
+                        geometry: new ol.geom.Point(ol.proj.fromLonLat([metar.longitude, metar.latitude])),
+                        svgimage: svg
+                    });
+                    metarFeature.setStyle(markerStyle);
+                    metarFeature.setId(stationId);
+                    metarFeatureByStationId.set(stationId, metarFeature);
+                    metarFeatures.push(metarFeature);
+                }
+                metarRawTextByStationId.set(stationId, metar.raw_text);
                 metarFeature.changed();
+                window.__metarRebuildStats.rebuilt++;
             });
+
+            // Stations no longer present in this cycle's feed - drop them,
+            // matching the previous clear-and-rebuild behavior.
+            for (const [stationId, feature] of metarFeatureByStationId) {
+                if (seenStationIds.has(stationId)) continue;
+                metarFeatures.remove(feature);
+                metarFeatureByStationId.delete(stationId);
+                metarRawTextByStationId.delete(stationId);
+            }
         }
         catch(error) {
             console.log(error.message);

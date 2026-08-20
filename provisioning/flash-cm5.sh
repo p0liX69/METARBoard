@@ -39,6 +39,15 @@ fi
 
 EXTERNAL_DISKS="$(diskutil list external physical | grep -o '^/dev/disk[0-9]*' | sed 's#/dev/##')"
 
+# Per-disk pass/fail is recorded here rather than trusted to the
+# background jobs' own exit status - `wait` on multiple PIDs only
+# reflects the LAST one given, so without this a dropped USB connection
+# or truncated image on one disk mid-parallel-flash would previously go
+# completely unnoticed (the trailing `echo done` always ran regardless of
+# whether dd actually succeeded).
+STATUS_DIR="$(mktemp -d)"
+trap 'rm -rf "${STATUS_DIR}"' EXIT
+
 PIDS=()
 DISKS=()
 for disk in "${TARGETS[@]}"; do
@@ -59,9 +68,27 @@ for disk in "${TARGETS[@]}"; do
     diskutil unmountDisk "/dev/${disk}"
     echo "==> Flashing /dev/${disk} in the background..."
     if [[ "${IMAGE}" == *.gz ]]; then
-        (gunzip -c "${IMAGE}" | sudo dd of="/dev/r${disk}" bs=4m 2>&1 | sed "s/^/[${disk}] /"; echo "[${disk}] done") &
+        (
+            gunzip -c "${IMAGE}" | sudo dd of="/dev/r${disk}" bs=4m 2>&1 | sed "s/^/[${disk}] /"
+            pipestatus=("${PIPESTATUS[@]}")
+            if [[ "${pipestatus[0]}" -eq 0 && "${pipestatus[1]}" -eq 0 ]]; then
+                echo ok > "${STATUS_DIR}/${disk}"
+            else
+                echo "fail (gunzip exit=${pipestatus[0]}, dd exit=${pipestatus[1]})" > "${STATUS_DIR}/${disk}"
+            fi
+            echo "[${disk}] done"
+        ) &
     else
-        (sudo dd if="${IMAGE}" of="/dev/r${disk}" bs=4m 2>&1 | sed "s/^/[${disk}] /"; echo "[${disk}] done") &
+        (
+            sudo dd if="${IMAGE}" of="/dev/r${disk}" bs=4m 2>&1 | sed "s/^/[${disk}] /"
+            pipestatus=("${PIPESTATUS[@]}")
+            if [[ "${pipestatus[0]}" -eq 0 ]]; then
+                echo ok > "${STATUS_DIR}/${disk}"
+            else
+                echo "fail (dd exit=${pipestatus[0]})" > "${STATUS_DIR}/${disk}"
+            fi
+            echo "[${disk}] done"
+        ) &
     fi
     PIDS+=($!)
     DISKS+=("${disk}")
@@ -76,13 +103,30 @@ echo
 echo "==> Flashing ${#PIDS[@]} disk(s) in parallel: ${DISKS[*]}"
 echo "    (dd on macOS is silent until it finishes a disk - this can take"
 echo "    several minutes per unit for a multi-GB image; be patient)"
-wait "${PIDS[@]}"
+# `|| true`: don't let one failed background job's exit status (wait only
+# reflects the last PID given anyway) abort this script under `set -e`
+# before the actual per-disk pass/fail reporting below ever runs.
+wait "${PIDS[@]}" || true
 
+echo
+FAILED_DISKS=()
 for disk in "${DISKS[@]}"; do
-    diskutil eject "/dev/${disk}" || true
+    result="$(cat "${STATUS_DIR}/${disk}" 2>/dev/null || echo "fail (no status recorded - flash subprocess may have crashed)")"
+    if [[ "${result}" == "ok" ]]; then
+        echo "[${disk}] flash succeeded"
+        diskutil eject "/dev/${disk}" || true
+    else
+        echo "[${disk}] FLASH FAILED: ${result}" >&2
+        FAILED_DISKS+=("${disk}")
+    fi
 done
 
 echo
+if [[ "${#FAILED_DISKS[@]}" -gt 0 ]]; then
+    echo "==> FAILED: ${FAILED_DISKS[*]} - do NOT ship these units, re-flash them." >&2
+    exit 1
+fi
+
 echo "==> Done. Remove each unit's EMMC-DISABLE jumper before powering it"
 echo "    on normally, or it'll boot back into USB boot mode instead of"
 echo "    the flashed OS."
