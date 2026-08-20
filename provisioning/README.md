@@ -265,6 +265,16 @@ fails, it rolls the symlink back to the previous release automatically.
 `settings.json`, `charts/`, `aircraft.db`, and `.env` all live in
 `/opt/metarboard-data/`, untouched by any of this.
 
+After a successful health check, it also re-runs
+`provisioning/apply-kiosk-config.sh` from the new release (non-fatal if
+it fails). This exists because an update only ever swaps the app symlink
+- it never re-runs `setup-pi.sh` itself, so a device provisioned before a
+kiosk-level fix existed (the wait-loop, loading background, cursor theme
+- see section 8) would otherwise never receive that fix via OTA even
+after its app code was fully current. `apply-kiosk-config.sh` holds
+exactly the kiosk-provisioning steps from `setup-pi.sh`, factored out so
+both can call it.
+
 Current version and last update result are shown at the top of `/admin`.
 
 **One-time setup, before cutting your first release:**

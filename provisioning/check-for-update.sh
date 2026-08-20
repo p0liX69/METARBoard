@@ -191,6 +191,16 @@ if [[ "${HEALTHY}" -eq 1 ]]; then
     echo -n "${LATEST_TAG}" > "${tmp_version}"
     mv -f "${tmp_version}" "${CURRENT_VERSION_FILE}"
     write_status "success" "Updated to ${LATEST_TAG}" "${LATEST_TAG}"
+
+    # setup-pi.sh's kiosk-provisioning steps (wait-loop, loading
+    # background, cursor theme, etc.) only ever run at first provisioning
+    # - an update swapping the app symlink never touches them, so a
+    # device provisioned before a kiosk-level fix existed would otherwise
+    # never receive it. Non-fatal: a failure here shouldn't roll back an
+    # otherwise-healthy app update.
+    log "applying kiosk config from ${LATEST_TAG}"
+    "${NEW_RELEASE_DIR}/provisioning/apply-kiosk-config.sh" || log "kiosk config apply failed (non-fatal, app update still applied)"
+
     reload_kiosk_display
 
     # Prune old releases, keeping the current one plus KEEP_RELEASES-1
