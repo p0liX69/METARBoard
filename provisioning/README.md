@@ -365,10 +365,10 @@ directly onto other units instead of re-running setup-pi.sh on each one.
 **Before capturing - reset everything that must be unique per device.**
 A freshly-provisioned unit has already been through first boot once, so
 it's not the blank slate a truly new unit would be. Skipping this step
-means every device flashed from the image would share the same hostname,
-SSH host keys, and machine-id - the exact mDNS collision bug the hostname
-uniqueness feature (above) exists to prevent, reintroduced via imaging
-instead of literal duplicate hostnames.
+means every device flashed from the image would share the same hostname -
+the exact mDNS collision bug the hostname uniqueness feature (above)
+exists to prevent, reintroduced via imaging instead of literal duplicate
+hostnames.
 
 ```bash
 sudo systemctl stop metarboard
@@ -376,14 +376,28 @@ sudo rm -f /opt/metarboard-data/hostname-initialized   # re-enables set-unique-h
 sudo rm -f /opt/metarboard-data/settings.json          # falls back to settings.default.json
 sudo rm -f /opt/metarboard-data/positionhistory.db /opt/metarboard-data/setup-attempt-status.json
 sudo rm -rf ~/METARBoard                               # your provisioning checkout, not needed at runtime
-sudo truncate -s 0 /etc/machine-id                     # triggers systemd's own first-boot detection...
-sudo rm -f /var/lib/dbus/machine-id /etc/ssh/ssh_host_*  # ...which also regenerates SSH host keys
 rm -f ~/.bash_history
 sudo systemctl start metarboard
 ```
 
 Leave `/opt/metarboard-data/charts`, `aircraft.db`, and `CURRENT_VERSION`
 alone - those are exactly what you want every shipped unit to start with.
+
+**Do NOT clear `/etc/machine-id` or `/etc/ssh/ssh_host_*` here.** An
+earlier version of this doc did (on the theory that emptying them
+triggers systemd's/regenerate_ssh_host_keys.service's own first-boot
+regeneration) - confirmed live, 3-for-3, on this specific Raspberry Pi OS
+(Debian 13 "trixie") build, that clearing both together simply leaves SSH
+permanently broken (`Connection refused`, host keys never regenerated) on
+next boot, even on a device with zero prior history. The regeneration
+path is not reliable enough to depend on. Every unit cloned from the same
+golden image sharing one SSH host-key fingerprint and machine-id is a
+minor, purely internal wart (it doesn't affect the customer-facing
+hostname-uniqueness mechanism above, which is derived from CPU serial,
+not machine-id) - not worth trading for SSH silently dying on every
+cloned unit. If you ever want per-device SSH host keys again, regenerate
+them explicitly and verify SSH still works *before* capturing the image,
+rather than relying on first-boot magic.
 
 **Capturing the image (Compute Module 5).** A CM5's eMMC isn't a
 removable card - it has to be exposed as a USB mass-storage device:
