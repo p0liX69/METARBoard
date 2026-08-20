@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>METARBoard Setup Postcard — Avery 3380</title>
+<style>
+  :root {
+    --navy: #0f2942;
+    --navy-light: #1c4569;
+    --amber: #f5a623;
+    --amber-dark: #c97e0d;
+    --paper: #f8f5ee;
+    --ink: #16212c;
+    --muted: #5b6b78;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Each Avery 3380 sheet is a plain US Letter page quartered into four
+     4.25in x 5.5in cards with zero margin/gap - the sheet's die-cuts
+     already sit exactly on those lines, so the grid below must land on
+     them exactly rather than centering with any margin. */
+  @page { size: 8.5in 11in; margin: 0; }
+
+  .sheet {
+    width: 8.5in;
+    height: 11in;
+    display: grid;
+    grid-template-columns: 4.25in 4.25in;
+    grid-template-rows: 5.5in 5.5in;
+    page-break-after: always;
+  }
+  .sheet:last-child { page-break-after: auto; }
+
+  .card {
+    width: 4.25in;
+    height: 5.5in;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ---------- FRONT ---------- */
+  .card.front {
+    background: radial-gradient(220% 140% at 90% -10%, rgba(245, 166, 35, 0.16), transparent 55%),
+                linear-gradient(160deg, var(--navy) 0%, var(--navy-light) 60%, #2c5f82 100%);
+    color: #eef3f7;
+    padding: 0.32in 0.34in;
+    display: flex;
+    flex-direction: column;
+  }
+  .brandrow { display: flex; align-items: center; gap: 10px; }
+  .brandrow svg { width: 26px; height: 26px; flex-shrink: 0; color: var(--amber); }
+  .wordmark { font-weight: 800; font-size: 16px; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.15; }
+  .wordmark small { display: block; font-weight: 600; font-size: 7px; letter-spacing: 0.09em; text-transform: uppercase; color: #b9cbdb; margin-top: 2px; }
+
+  .front h1 {
+    margin: 0.2in 0 0.16in;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.22;
+  }
+  .front h1 em { font-style: normal; color: var(--amber); }
+
+  .steps { display: flex; flex-direction: column; gap: 0.135in; flex: 1; }
+  .step { display: flex; gap: 10px; align-items: flex-start; }
+  .step .num {
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--amber) 0%, var(--amber-dark) 100%);
+    color: #2a1a00; font-weight: 800; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step .body p.title { margin: 0 0 2px; font-size: 12.5px; font-weight: 700; line-height: 1.25; }
+  .step .body p.desc { margin: 0; font-size: 10.5px; line-height: 1.35; color: #cfdce7; }
+  .step .body code {
+    display: inline-block; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.28);
+    border-radius: 5px; padding: 1px 6px; font-size: 10.5px; font-weight: 700; color: var(--amber);
+    font-family: "SF Mono", Consolas, monospace;
+  }
+
+  .front .footer {
+    margin-top: 0.14in;
+    padding-top: 0.1in;
+    border-top: 1px solid rgba(255,255,255,0.18);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9px;
+  }
+  .front .footer .brandline { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+  .front .footer .flip { color: #aebfcd; }
+
+  /* ---------- BACK ---------- */
+  .card.back {
+    background: repeating-linear-gradient(
+      to bottom, transparent 0, transparent 21px, rgba(15,41,66,0.09) 22px
+    ), var(--paper);
+    color: var(--ink);
+    padding: 0.3in 0.32in;
+    display: flex;
+    flex-direction: column;
+  }
+  .back .eyebrow { font-size: 8.5px; font-weight: 800; letter-spacing: 0.1em; color: var(--amber-dark); margin: 0 0 3px; }
+  .back h2 { font-size: 15px; font-weight: 700; margin: 0 0 0.16in; line-height: 1.25; }
+
+  .back section { margin-bottom: 0.15in; }
+  .back section h3 { font-size: 11.5px; font-weight: 700; margin: 0 0 4px; display: flex; align-items: center; gap: 6px; }
+  .back section p, .back section li { font-size: 10px; line-height: 1.4; color: #33424d; margin: 0 0 5px; }
+  .back section ul { margin: 0; padding-left: 15px; }
+  .back section li { margin-bottom: 5px; }
+  .back code {
+    display: inline-block; background: rgba(15,41,66,0.08); border: 1px solid rgba(15,41,66,0.18);
+    border-radius: 4px; padding: 0 5px; font-size: 9.5px; font-weight: 700; color: var(--navy);
+    font-family: "SF Mono", Consolas, monospace;
+  }
+
+  .back .footer {
+    margin-top: auto;
+    padding-top: 0.12in;
+    border-top: 1px solid rgba(15,41,66,0.18);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .back .footer .help { font-size: 10px; }
+  .back .footer .help strong { display: block; font-size: 10.5px; }
+  .back .footer .help a { color: var(--navy); text-decoration: none; }
+  .back .footer .rev {
+    font-size: 8.5px; font-weight: 700; letter-spacing: 0.04em; color: #fff;
+    background: var(--navy); padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+  }
+
+  /* On-screen only: helps you see the die-cut lines before printing.
+     Printed output has no visible cut guides - the Avery sheet itself
+     is pre-scored on these exact lines. */
+  @media screen {
+    body { background: #333; padding: 24px; }
+    .sheet { margin: 0 auto 24px; box-shadow: 0 0 0 1px #000, 0 10px 30px rgba(0,0,0,0.5); }
+    .card { outline: 1px dashed rgba(255,0,0,0.4); outline-offset: -1px; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- SHEET 1: fronts x4 -->
+  <div class="sheet">
+    <div class="card front">
+      <div class="brandrow">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/></svg>
+        <div class="wordmark">METARBoard<small>Aviation Weather &amp; Traffic Display</small></div>
+      </div>
+      <h1>Let's get your display <em>on the air.</em></h1>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div class="body"><p class="title">Plug it in.</p><p class="desc">Power, then HDMI to your TV or monitor. Give it about 30 seconds to boot.</p></div></div>
+        <div class="step"><div class="num">2</div><div class="body"><p class="title">Connect your phone to its Wi&#8209;Fi.</p><p class="desc">Look for a network called <code>METARBoard Setup</code> &mdash; no password needed.</p></div></div>
+        <div class="step"><div class="num">3</div><div class="body"><p class="title">Open a browser to the setup page.</p><p class="desc">Go to <code>10.42.0.1:8500</code> and the wizard will load.</p></div></div>
+        <div class="step"><div class="num">4</div><div class="body"><p class="title">Pick your Wi&#8209;Fi, airport, and password.</p><p class="desc">Choose your home network, enter your airport code (e.g. KJFK), optionally name the display, and set an admin password.</p></div></div>
+      </div>
+      <div class="footer"><span class="brandline">METARBoard Setup</span><span class="flip">Flip card for help &amp; later access &rarr;</span></div>
+    </div>
+    <div class="card front">
+      <div class="brandrow">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/></svg>
+        <div class="wordmark">METARBoard<small>Aviation Weather &amp; Traffic Display</small></div>
+      </div>
+      <h1>Let's get your display <em>on the air.</em></h1>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div class="body"><p class="title">Plug it in.</p><p class="desc">Power, then HDMI to your TV or monitor. Give it about 30 seconds to boot.</p></div></div>
+        <div class="step"><div class="num">2</div><div class="body"><p class="title">Connect your phone to its Wi&#8209;Fi.</p><p class="desc">Look for a network called <code>METARBoard Setup</code> &mdash; no password needed.</p></div></div>
+        <div class="step"><div class="num">3</div><div class="body"><p class="title">Open a browser to the setup page.</p><p class="desc">Go to <code>10.42.0.1:8500</code> and the wizard will load.</p></div></div>
+        <div class="step"><div class="num">4</div><div class="body"><p class="title">Pick your Wi&#8209;Fi, airport, and password.</p><p class="desc">Choose your home network, enter your airport code (e.g. KJFK), optionally name the display, and set an admin password.</p></div></div>
+      </div>
+      <div class="footer"><span class="brandline">METARBoard Setup</span><span class="flip">Flip card for help &amp; later access &rarr;</span></div>
+    </div>
+    <div class="card front">
+      <div class="brandrow">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/></svg>
+        <div class="wordmark">METARBoard<small>Aviation Weather &amp; Traffic Display</small></div>
+      </div>
+      <h1>Let's get your display <em>on the air.</em></h1>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div class="body"><p class="title">Plug it in.</p><p class="desc">Power, then HDMI to your TV or monitor. Give it about 30 seconds to boot.</p></div></div>
+        <div class="step"><div class="num">2</div><div class="body"><p class="title">Connect your phone to its Wi&#8209;Fi.</p><p class="desc">Look for a network called <code>METARBoard Setup</code> &mdash; no password needed.</p></div></div>
+        <div class="step"><div class="num">3</div><div class="body"><p class="title">Open a browser to the setup page.</p><p class="desc">Go to <code>10.42.0.1:8500</code> and the wizard will load.</p></div></div>
+        <div class="step"><div class="num">4</div><div class="body"><p class="title">Pick your Wi&#8209;Fi, airport, and password.</p><p class="desc">Choose your home network, enter your airport code (e.g. KJFK), optionally name the display, and set an admin password.</p></div></div>
+      </div>
+      <div class="footer"><span class="brandline">METARBoard Setup</span><span class="flip">Flip card for help &amp; later access &rarr;</span></div>
+    </div>
+    <div class="card front">
+      <div class="brandrow">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/></svg>
+        <div class="wordmark">METARBoard<small>Aviation Weather &amp; Traffic Display</small></div>
+      </div>
+      <h1>Let's get your display <em>on the air.</em></h1>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div class="body"><p class="title">Plug it in.</p><p class="desc">Power, then HDMI to your TV or monitor. Give it about 30 seconds to boot.</p></div></div>
+        <div class="step"><div class="num">2</div><div class="body"><p class="title">Connect your phone to its Wi&#8209;Fi.</p><p class="desc">Look for a network called <code>METARBoard Setup</code> &mdash; no password needed.</p></div></div>
+        <div class="step"><div class="num">3</div><div class="body"><p class="title">Open a browser to the setup page.</p><p class="desc">Go to <code>10.42.0.1:8500</code> and the wizard will load.</p></div></div>
+        <div class="step"><div class="num">4</div><div class="body"><p class="title">Pick your Wi&#8209;Fi, airport, and password.</p><p class="desc">Choose your home network, enter your airport code (e.g. KJFK), optionally name the display, and set an admin password.</p></div></div>
+      </div>
+      <div class="footer"><span class="brandline">METARBoard Setup</span><span class="flip">Flip card for help &amp; later access &rarr;</span></div>
+    </div>
+  </div>
+
+  <!-- SHEET 2: backs x4 -->
+  <div class="sheet">
+    <div class="card back">
+      <p class="eyebrow">AFTER SETUP</p>
+      <h2>Keep this card &mdash; you may need it again.</h2>
+      <section>
+        <h3>&#128274; Change settings later</h3>
+        <p>When setup finishes, the wizard shows an address like <code>metarboard&#8209;frontdesk.local:8500/admin</code> &mdash; note it down.</p>
+        <p>From any device on the <strong>same Wi&#8209;Fi network</strong> as the display, open a browser to that address and sign in with your admin password.</p>
+      </section>
+      <section>
+        <h3>&#10067; Trouble connecting?</h3>
+        <ul>
+          <li>Screen stuck on setup? Reconnect to <code>METARBoard Setup</code> Wi&#8209;Fi and finish the steps on the front.</li>
+          <li>Moved to a new router? The display drops back into setup mode automatically &mdash; just repeat the steps.</li>
+          <li>Lost power mid&#8209;setup? No harm done &mdash; power it back on and pick up where you left off.</li>
+        </ul>
+      </section>
+      <div class="footer">
+        <div class="help"><strong>Need a hand?</strong><a href="mailto:support@metarboard.io">support@metarboard.io</a></div>
+        <div class="rev">REV. 2026.08</div>
+      </div>
+    </div>
+    <div class="card back">
+      <p class="eyebrow">AFTER SETUP</p>
+      <h2>Keep this card &mdash; you may need it again.</h2>
+      <section>
+        <h3>&#128274; Change settings later</h3>
+        <p>When setup finishes, the wizard shows an address like <code>metarboard&#8209;frontdesk.local:8500/admin</code> &mdash; note it down.</p>
+        <p>From any device on the <strong>same Wi&#8209;Fi network</strong> as the display, open a browser to that address and sign in with your admin password.</p>
+      </section>
+      <section>
+        <h3>&#10067; Trouble connecting?</h3>
+        <ul>
+          <li>Screen stuck on setup? Reconnect to <code>METARBoard Setup</code> Wi&#8209;Fi and finish the steps on the front.</li>
+          <li>Moved to a new router? The display drops back into setup mode automatically &mdash; just repeat the steps.</li>
+          <li>Lost power mid&#8209;setup? No harm done &mdash; power it back on and pick up where you left off.</li>
+        </ul>
+      </section>
+      <div class="footer">
+        <div class="help"><strong>Need a hand?</strong><a href="mailto:support@metarboard.io">support@metarboard.io</a></div>
+        <div class="rev">REV. 2026.08</div>
+      </div>
+    </div>
+    <div class="card back">
+      <p class="eyebrow">AFTER SETUP</p>
+      <h2>Keep this card &mdash; you may need it again.</h2>
+      <section>
+        <h3>&#128274; Change settings later</h3>
+        <p>When setup finishes, the wizard shows an address like <code>metarboard&#8209;frontdesk.local:8500/admin</code> &mdash; note it down.</p>
+        <p>From any device on the <strong>same Wi&#8209;Fi network</strong> as the display, open a browser to that address and sign in with your admin password.</p>
+      </section>
+      <section>
+        <h3>&#10067; Trouble connecting?</h3>
+        <ul>
+          <li>Screen stuck on setup? Reconnect to <code>METARBoard Setup</code> Wi&#8209;Fi and finish the steps on the front.</li>
+          <li>Moved to a new router? The display drops back into setup mode automatically &mdash; just repeat the steps.</li>
+          <li>Lost power mid&#8209;setup? No harm done &mdash; power it back on and pick up where you left off.</li>
+        </ul>
+      </section>
+      <div class="footer">
+        <div class="help"><strong>Need a hand?</strong><a href="mailto:support@metarboard.io">support@metarboard.io</a></div>
+        <div class="rev">REV. 2026.08</div>
+      </div>
+    </div>
+    <div class="card back">
+      <p class="eyebrow">AFTER SETUP</p>
+      <h2>Keep this card &mdash; you may need it again.</h2>
+      <section>
+        <h3>&#128274; Change settings later</h3>
+        <p>When setup finishes, the wizard shows an address like <code>metarboard&#8209;frontdesk.local:8500/admin</code> &mdash; note it down.</p>
+        <p>From any device on the <strong>same Wi&#8209;Fi network</strong> as the display, open a browser to that address and sign in with your admin password.</p>
+      </section>
+      <section>
+        <h3>&#10067; Trouble connecting?</h3>
+        <ul>
+          <li>Screen stuck on setup? Reconnect to <code>METARBoard Setup</code> Wi&#8209;Fi and finish the steps on the front.</li>
+          <li>Moved to a new router? The display drops back into setup mode automatically &mdash; just repeat the steps.</li>
+          <li>Lost power mid&#8209;setup? No harm done &mdash; power it back on and pick up where you left off.</li>
+        </ul>
+      </section>
+      <div class="footer">
+        <div class="help"><strong>Need a hand?</strong><a href="mailto:support@metarboard.io">support@metarboard.io</a></div>
+        <div class="rev">REV. 2026.08</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

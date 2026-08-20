@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>METARBoard — Live Aviation Weather &amp; Traffic Display for Flight Schools &amp; FBOs</title>
+<meta name="description" content="A dedicated wall display for flight schools, FBOs, and hangars — live sectional charts, ADS-B traffic, METARs, and hazard overlays, always on, zero IT required.">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0f2942">
+<meta name="google-site-verification" content="13vX9U6p5LKbHa4tc6gcjbC_QHY3qrNzmAqGg_S2eCg" />
+<link rel="canonical" href="https://metarboard.io/">
+
+<!-- Favicons -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f5a623'%3E%3Cpath d='M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="images/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="images/apple-touch-icon.png">
+
+<!-- Open Graph / social sharing -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="METARBoard">
+<meta property="og:url" content="https://metarboard.io/">
+<meta property="og:title" content="METARBoard — Live Aviation Weather &amp; Traffic Display for Flight Schools &amp; FBOs">
+<meta property="og:description" content="A dedicated wall display for flight schools, FBOs, and hangars — live sectional charts, ADS-B traffic, METARs, and hazard overlays, always on, zero IT required.">
+<meta property="og:image" content="https://metarboard.io/images/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="METARBoard: The wall display your hangar has been missing">
+<meta property="og:locale" content="en_US">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="METARBoard — Live Aviation Weather &amp; Traffic Display">
+<meta name="twitter:description" content="A dedicated wall display for flight schools, FBOs, and hangars — live sectional charts, ADS-B traffic, METARs, and hazard overlays, always on, zero IT required.">
+<meta name="twitter:image" content="https://metarboard.io/images/og-image.png">
+
+<!-- Structured data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "METARBoard",
+  "url": "https://metarboard.io/",
+  "image": "https://metarboard.io/images/og-image.png",
+  "description": "A dedicated wall display for flight schools, FBOs, and hangars showing live sectional charts, ADS-B traffic, METARs, SIGMETs/AIRMETs, lightning, and weather trends. Sets up entirely from a phone, no keyboard, mouse, or IT required.",
+  "brand": { "@type": "Brand", "name": "METARBoard" },
+  "category": "Aviation weather display appliance",
+  "audience": {
+    "@type": "Audience",
+    "audienceType": "Flight schools, FBOs, flying clubs, and hangars"
+  },
+  "offers": {
+    "@type": "Offer",
+    "availability": "https://schema.org/PreOrder",
+    "url": "https://metarboard.io/#contact",
+    "priceCurrency": "USD",
+    "seller": { "@type": "Organization", "name": "METARBoard" }
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "METARBoard",
+  "url": "https://metarboard.io/",
+  "logo": "https://metarboard.io/images/apple-touch-icon.png",
+  "email": "support@metarboard.io",
+  "contactPoint": {
+    "@type": "ContactPoint",
+    "email": "support@metarboard.io",
+    "contactType": "customer support"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What does METARBoard show?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A live sectional chart with real ADS-B traffic, your home airport's current conditions and flight category, active SIGMETs and AIRMETs, lightning strikes, a 12-hour weather trend, winds aloft, and sunrise/sunset — all on one always-on display."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is METARBoard safe to use for flight planning?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. METARBoard is a situational-awareness display for ground use in briefing rooms, lounges, and ramps. It is not a certified avionics product and should never be used as a primary source for flight planning or in-flight decision making — always consult official briefings, NOTAMs, and ATC."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is METARBoard set up?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "There's no keyboard, mouse, or IT ticket involved. On first boot the display broadcasts its own open WiFi network; a phone connects to it, opens one page, picks a home WiFi network and airport, and the display reloads itself automatically."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can METARBoard highlight my school's own aircraft?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Up to 50 tail numbers can be listed as fleet aircraft and they render in magenta on the map, distinct from every other aircraft, so students learn to spot your fleet on sight."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does METARBoard need an internet connection to keep working?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It needs WiFi to pull live weather, traffic, and hazard data, but the sectional and terminal charts themselves are stored on the device, and the display self-updates and self-heals without any IT maintenance."
+      }
+    }
+  ]
+}
+</script>
+
+<style>
+  @font-face {
+    font-family: "Overpass";
+    font-weight: 400 900;
+    font-display: swap;
+    src: url("fonts/overpass-variable.woff2") format("woff2");
+  }
+
+  :root {
+    --navy-deep: #081826;
+    --navy: #0f2942;
+    --navy-light: #1c4569;
+    --sky: #2c5f82;
+    --amber: #f5a623;
+    --amber-dark: #c97e0d;
+    --paper: #f8f5ee;
+    --paper-line: #e6dfc9;
+    --ink: #16212c;
+    --muted: #5b6b78;
+    --muted-on-dark: #a9bdcc;
+    --max: 1180px;
+  }
+
+  * { box-sizing: border-box; min-width: 0; }
+
+  html { overflow-x: hidden; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  img { max-width: 100%; height: auto; display: block; }
+
+  .wrap {
+    max-width: var(--max);
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  h1, h2, h3 {
+    font-family: "Overpass", -apple-system, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  code, .mono {
+    font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+
+  a { color: inherit; }
+
+  /* ---------- nav ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: rgba(8, 24, 38, 0.88);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .nav .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 68px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #fff;
+  }
+
+  .brand svg { width: 26px; height: 26px; color: var(--amber); flex-shrink: 0; }
+
+  .brand span {
+    font-family: "Overpass", sans-serif;
+    font-weight: 800;
+    font-size: 19px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .navlinks {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+
+  .navlinks a {
+    color: #cfe0ee;
+    text-decoration: none;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+
+  .navlinks a:hover { color: #fff; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "Overpass", sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 13px 24px;
+    border-radius: 9px;
+    white-space: nowrap;
+  }
+
+  .btn-amber {
+    background: linear-gradient(135deg, var(--amber) 0%, var(--amber-dark) 100%);
+    color: #2a1a00;
+    box-shadow: 0 8px 20px rgba(217, 140, 15, 0.35);
+  }
+
+  .btn-ghost {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+
+  .btn-ghost:hover { background: rgba(255,255,255,0.14); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    background:
+      radial-gradient(1400px 700px at 85% -10%, rgba(245, 166, 35, 0.16), transparent 60%),
+      linear-gradient(160deg, var(--navy-deep) 0%, var(--navy) 45%, var(--sky) 120%);
+    color: #eef3f7;
+    padding: 84px 0 0;
+    overflow: hidden;
+  }
+
+  .hero .wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 44px;
+    text-align: center;
+    align-items: center;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "Overpass", sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin: 0 auto 18px;
+  }
+
+  .eyebrow::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 0 4px rgba(245,166,35,0.18);
+  }
+
+  .hero h1 {
+    font-size: clamp(36px, 5.4vw, 62px);
+    font-weight: 800;
+    line-height: 1.08;
+    max-width: 16ch;
+    margin: 0 auto;
+  }
+
+  .hero h1 em {
+    font-style: normal;
+    color: var(--amber);
+  }
+
+  .hero .sub {
+    font-size: 19px;
+    line-height: 1.6;
+    color: #cfe0ee;
+    max-width: 56ch;
+    margin: 22px auto 0;
+  }
+
+  .hero .ctarow {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    margin-top: 32px;
+    flex-wrap: wrap;
+  }
+
+  .hero-shot {
+    position: relative;
+    margin: 8px auto 0;
+    max-width: 980px;
+  }
+
+  .bezel {
+    background: #050c14;
+    border-radius: 16px;
+    padding: 14px 14px 34px;
+    box-shadow: 0 40px 90px rgba(0,0,0,0.45), 0 2px 0 rgba(255,255,255,0.06) inset;
+  }
+
+  .bezel img {
+    border-radius: 5px;
+    width: 100%;
+    height: auto;
+  }
+
+  .bezel::after {
+    content: "";
+    display: block;
+    width: 70px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.12);
+    margin: 14px auto 0;
+  }
+
+  .hero-shot .glow {
+    position: absolute;
+    inset: -60px;
+    background: radial-gradient(closest-side, rgba(245,166,35,0.18), transparent 70%);
+    z-index: -1;
+  }
+
+  /* audience strip */
+  .audience {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    margin-top: 64px;
+  }
+
+  .audience .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 40px;
+    justify-content: center;
+    padding: 26px 28px;
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-on-dark);
+  }
+
+  .audience span { display: flex; align-items: center; gap: 8px; }
+  .audience svg { width: 16px; height: 16px; color: var(--amber); }
+
+  /* ---------- sections ---------- */
+  section { padding: 96px 0; }
+
+  .section-head {
+    max-width: 640px;
+    margin: 0 auto 56px;
+    text-align: center;
+  }
+
+  .section-head .eyebrow { color: var(--amber-dark); justify-content: center; }
+  .section-head .eyebrow::before { background: var(--amber-dark); box-shadow: 0 0 0 4px rgba(201,126,13,0.15); }
+
+  .section-head h2 {
+    font-size: clamp(28px, 3.4vw, 38px);
+    font-weight: 800;
+    color: var(--navy);
+  }
+
+  .section-head p {
+    margin: 16px 0 0;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  /* feature rows */
+  .feature-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 64px;
+    align-items: center;
+    margin-bottom: 108px;
+  }
+
+  .feature-row.reverse .feature-copy { order: 2; }
+  .feature-row.reverse .feature-shot { order: 1; }
+
+  /* layers grid */
+  .layers-head {
+    max-width: 640px;
+    margin: 0 0 40px;
+  }
+
+  .layers-head h3 {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--navy);
+    margin-bottom: 10px;
+  }
+
+  .layers-head p {
+    font-size: 15.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .layer-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+  }
+
+  .layer-card {
+    background: #fff;
+    border: 1px solid var(--paper-line);
+    border-radius: 12px;
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .layer-card.highlight {
+    border-color: rgba(201, 126, 13, 0.35);
+    background: linear-gradient(180deg, rgba(245,166,35,0.07) 0%, rgba(245,166,35,0.02) 100%);
+  }
+
+  .layer-card svg {
+    width: 22px;
+    height: 22px;
+    color: var(--amber-dark);
+  }
+
+  .layer-card h4 {
+    margin: 0;
+    font-family: "Overpass", sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.005em;
+    text-transform: none;
+    color: var(--navy);
+  }
+
+  .layer-card p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: #4a5865;
+  }
+
+  .feature-shot img {
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(15, 41, 66, 0.18);
+    border: 1px solid var(--paper-line);
+    width: 100%;
+    height: auto;
+  }
+
+  .feature-copy .tag {
+    display: inline-block;
+    font-family: "Overpass", sans-serif;
+    font-weight: 700;
+    font-size: 12.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber-dark);
+    background: rgba(245,166,35,0.12);
+    border-radius: 6px;
+    padding: 5px 10px;
+    margin-bottom: 14px;
+  }
+
+  .feature-copy h3 {
+    font-size: 27px;
+    font-weight: 800;
+    color: var(--navy);
+    margin-bottom: 14px;
+  }
+
+  .feature-copy p {
+    font-size: 16.5px;
+    line-height: 1.65;
+    color: #384652;
+    margin: 0 0 14px;
+  }
+
+  .feature-copy ul {
+    margin: 18px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .feature-copy li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 15.5px;
+    color: #384652;
+    line-height: 1.5;
+  }
+
+  .feature-copy li svg {
+    width: 18px; height: 18px;
+    color: var(--amber-dark);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* dark band: reliability */
+  .band-dark {
+    background: linear-gradient(160deg, var(--navy-deep) 0%, var(--navy) 100%);
+    color: #eef3f7;
+  }
+
+  .band-dark .section-head h2 { color: #fff; }
+  .band-dark .section-head p { color: var(--muted-on-dark); }
+  .band-dark .eyebrow { color: var(--amber); }
+  .band-dark .eyebrow::before { background: var(--amber); box-shadow: 0 0 0 4px rgba(245,166,35,0.18); }
+
+  .grid3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+  }
+
+  .cardlet {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 28px 26px;
+  }
+
+  .cardlet svg {
+    width: 30px; height: 30px;
+    color: var(--amber);
+    margin-bottom: 16px;
+  }
+
+  .cardlet h3 {
+    font-size: 17.5px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .cardlet p {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--muted-on-dark);
+    margin: 0;
+  }
+
+  /* how it works */
+  .steps3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 40px;
+    max-width: var(--max);
+    margin: 0 auto;
+  }
+
+  .step3 { text-align: center; }
+
+  .step3 .num {
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--amber) 0%, var(--amber-dark) 100%);
+    color: #2a1a00;
+    font-family: "Overpass", sans-serif;
+    font-weight: 800;
+    font-size: 20px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 16px;
+    box-shadow: 0 6px 16px rgba(217,140,15,0.3);
+  }
+
+  .step3 h3 { font-size: 17px; font-weight: 800; color: var(--navy); margin-bottom: 8px; }
+  .step3 p { font-size: 15px; line-height: 1.6; color: var(--muted); margin: 0; }
+
+  .how-shot {
+    margin-top: 64px;
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .how-shot .bezel { background: var(--navy-deep); }
+
+  /* FAQ */
+  .faq-list {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .faq-item {
+    background: #fff;
+    border: 1px solid var(--paper-line);
+    border-radius: 12px;
+    padding: 22px 26px;
+  }
+
+  .faq-item h3 {
+    font-size: 16.5px;
+    font-weight: 800;
+    color: var(--navy);
+    text-transform: none;
+    letter-spacing: 0;
+    margin-bottom: 8px;
+  }
+
+  .faq-item p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.65;
+    color: #4a5865;
+  }
+
+  /* CTA */
+  .cta {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--sky) 100%);
+    color: #fff;
+    border-radius: 22px;
+    padding: 64px 48px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta::before {
+    content: "";
+    position: absolute;
+    inset: -40% -10% auto auto;
+    width: 60%; height: 200%;
+    background: radial-gradient(closest-side, rgba(245,166,35,0.22), transparent 70%);
+  }
+
+  .cta h2 {
+    font-size: clamp(26px, 3.2vw, 34px);
+    font-weight: 800;
+    position: relative;
+  }
+
+  .cta p {
+    margin: 16px auto 0;
+    max-width: 46ch;
+    color: #d7e6f1;
+    font-size: 16.5px;
+    line-height: 1.6;
+    position: relative;
+  }
+
+  .cta .ctarow {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    margin-top: 30px;
+    position: relative;
+    flex-wrap: wrap;
+  }
+
+  /* footer */
+  footer {
+    background: var(--navy-deep);
+    color: var(--muted-on-dark);
+    padding: 56px 0 40px;
+    font-size: 13.5px;
+  }
+
+  footer .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  footer .brand { margin-bottom: 10px; }
+  footer .fcol p { margin: 0 0 8px; line-height: 1.6; max-width: 40ch; }
+  footer .fcol a { text-decoration: none; color: #cfe0ee; font-weight: 600; }
+  footer .fine {
+    margin-top: 36px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #7d90a0;
+  }
+
+  @media (max-width: 1080px) {
+    .layer-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  @media (max-width: 880px) {
+    .navlinks { display: none; }
+    .feature-row, .feature-row.reverse { grid-template-columns: 1fr; }
+    .feature-row.reverse .feature-copy, .feature-row.reverse .feature-shot { order: initial; }
+    .grid3, .steps3 { grid-template-columns: 1fr; }
+    .layer-grid { grid-template-columns: repeat(2, 1fr); }
+    .cta { padding: 48px 24px; }
+    section { padding: 68px 0; }
+    footer .wrap { flex-direction: column; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="wrap">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/></svg>
+        <span>METARBoard</span>
+      </div>
+      <div class="navlinks">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#reliability">Reliability</a>
+        <a href="#faq">FAQ</a>
+        <a href="#contact" class="btn btn-amber" style="padding:10px 18px;">Get in touch</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+  <header class="hero">
+    <div class="wrap">
+      <div>
+        <div class="eyebrow">For flight schools &amp; FBOs</div>
+        <h1>The wall display your <em>hangar</em> has been missing.</h1>
+        <p class="sub">Live sectional charts, real ADS-B traffic, METARs, and hazard overlays — always on, always current, on a dedicated screen nobody has to babysit.</p>
+        <div class="ctarow">
+          <a href="#contact" class="btn btn-amber">Get in touch</a>
+          <a href="#how" class="btn btn-ghost">See how setup works</a>
+        </div>
+      </div>
+      <div class="hero-shot">
+        <div class="glow"></div>
+        <div class="bezel">
+          <img src="images/hero-map.webp" width="1600" height="900" alt="METARBoard display showing an FAA sectional chart with live radar, AIRMET hazard overlays, ADS-B traffic icons, winds aloft, sunrise/sunset countdown, and a current METAR popup for Greater Cumberland Regional Airport (KCBE)" fetchpriority="high">
+        </div>
+      </div>
+    </div>
+    <div class="audience">
+      <div class="wrap">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h20v14H2z"/><path d="M8 21h8M12 17v4"/></svg>Flight schools</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="9" width="18" height="12" rx="1"/><path d="M9 21V9M3 9l9-6 9 6"/></svg>FBOs &amp; terminals</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18M3 12h18"/></svg>Flying clubs</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21l9-16 9 16z"/></svg>Hangars &amp; lounges</span>
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">What's on screen</div>
+        <h2>Everything a pilot checks before walking to the ramp.</h2>
+        <p>Not a weather app squinting on a phone — a purpose-built display designed to be read from across the room.</p>
+      </div>
+
+      <div class="feature-row">
+        <div class="feature-copy">
+          <span class="tag">Live traffic</span>
+          <h3>Real ADS-B traffic, not a stock photo of a radar screen.</h3>
+          <p>Aircraft render as actual type icons — not generic dots — scaled and outlined to stay readable on a TV across a lounge. Military traffic highlights in red; your own fleet highlights in magenta, so students learn to spot your aircraft on sight.</p>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Type-accurate icons for GA singles, twins, jets, rotorcraft</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Fleet &amp; military highlighting, tuned for high-contrast visibility</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Built on the same sectional base map pilots already read</li>
+          </ul>
+        </div>
+        <div class="feature-shot">
+          <img src="images/traffic-map.webp" width="1500" height="900" loading="lazy" alt="Close-up of METARBoard's live ADS-B traffic icons rendered as real aircraft shapes over a sectional chart near Hagerstown">
+        </div>
+      </div>
+
+      <div class="feature-row reverse">
+        <div class="feature-copy">
+          <span class="tag">Weather &amp; hazards</span>
+          <h3>Flight category, hazards, and trend — at a glance, not a tap.</h3>
+          <p>Your home airport's current conditions sit in a always-visible popup with flight category coloring. Active SIGMETs and AIRMETs (icing, turbulence, IFR, freezing level) get their own color-coded legend, and lightning strikes render live on the map.</p>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>12-hour trend sparklines for altimeter, ceiling, and visibility</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Winds aloft, sunrise/sunset countdown, local + Zulu clocks</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Every overlay toggles independently from a simple admin page</li>
+          </ul>
+        </div>
+        <div class="feature-shot">
+          <img src="images/hero-detail-top.webp" width="1276" height="304" loading="lazy" alt="METARBoard's active hazards legend for AIRMETs next to the 12-hour weather trend panel with altimeter and visibility sparklines">
+        </div>
+      </div>
+
+      <div class="layers-head" style="margin-top:108px;">
+        <div class="eyebrow">Fully customizable</div>
+        <h3>Every layer is optional. Turn on what matters at your field.</h3>
+        <p>Nobody needs all of this running at once. Each overlay below toggles independently from <code>/admin</code> — no reboot, no re-provisioning, just a checkbox.</p>
+      </div>
+
+      <div class="layer-grid">
+        <div class="layer-card highlight">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 7h7l-6 5 2 8-7-5-7 5 2-8-6-5h7z"/></svg>
+          <h4>Fleet highlighting</h4>
+          <p>List up to 50 of your own tail numbers and they render in magenta — instantly obvious against every other aircraft on screen.</p>
+        </div>
+        <div class="layer-card highlight">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l4 2v6c0 5-2.5 8-4 9-1.5-1-4-4-4-9V4l4-2z"/></svg>
+          <h4>Favorite airports</h4>
+          <p>Pin up to 6 other fields — a practice area, a common cross-country stop — to a strip along the bottom with live flight category.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/></svg>
+          <h4>Live ADS-B traffic</h4>
+          <p>Type-accurate aircraft icons, scaled and outlined to stay readable across a room.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/></svg>
+          <h4>Military highlighting</h4>
+          <p>Government/military-registered aircraft render in red automatically — no configuration needed.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12a7 7 0 0 1 14 0M2 12a10 10 0 0 1 20 0M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
+          <h4>Live NEXRAD radar</h4>
+          <p>High-resolution weather radar mosaic, layered under everything else.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 11 14 9 22 21 10 13 10 13 2"/></svg>
+          <h4>Lightning strikes</h4>
+          <p>Recent strikes plot live on the map and fade out as they age off.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <h4>SIGMETs</h4>
+          <p>Convective activity, severe turbulence, and icing — color-coded on the map with a legend.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><line x1="12" y1="13" x2="12" y2="17"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          <h4>AIRMETs</h4>
+          <p>IFR conditions, turbulence, icing, freezing level, and mountain obscuration, each their own color.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="8" y1="8" x2="16" y2="16"/><line x1="16" y1="8" x2="8" y2="16"/></svg>
+          <h4>TFRs</h4>
+          <p>Active Temporary Flight Restrictions outlined right on the sectional as they're issued.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3 4"/></svg>
+          <h4>Home airspace boundary</h4>
+          <p>Your field's own Class B/C/D/E outline, drawn directly on the chart.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="21 13 21 7 15 7"/></svg>
+          <h4>12-hour weather trend</h4>
+          <p>Sparklines for altimeter, ceiling, and visibility, so a shift in weather is obvious before it's read.</p>
+        </div>
+        <div class="layer-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5A2.5 2.5 0 1 1 12 7H2M13 11h6a2.5 2.5 0 1 1 0 5H2M6 20h9.5a2.5 2.5 0 1 0 0-5"/></svg>
+          <h4>Winds aloft</h4>
+          <p>Forecast winds and temperatures at 3,000 through 12,000 ft from the nearest station.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" style="background:#fff;">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Setup</div>
+        <h2>No keyboard. No mouse. No IT ticket.</h2>
+        <p>Plug it into power and a screen. Everything else happens from a phone.</p>
+      </div>
+
+      <div class="steps3">
+        <div class="step3">
+          <div class="num">1</div>
+          <h3>Connect your phone</h3>
+          <p>The display broadcasts its own open WiFi network the first time it boots — no password to look up.</p>
+        </div>
+        <div class="step3">
+          <div class="num">2</div>
+          <h3>Open one page</h3>
+          <p>Your phone gets a simple wizard. The TV shows plain instructions the whole time, so nobody's guessing.</p>
+        </div>
+        <div class="step3">
+          <div class="num">3</div>
+          <h3>Pick WiFi &amp; airport</h3>
+          <p>Choose your network, enter your home airport, set an admin password. The display reloads itself — done.</p>
+        </div>
+      </div>
+
+      <div class="how-shot">
+        <div class="bezel">
+          <img src="images/setup-screen.webp" width="1800" height="1012" loading="lazy" alt="METARBoard's on-screen setup instructions, shown directly on the display, telling a customer to connect their phone to the METARBoard Setup WiFi network and browse to 10.42.0.1:8500">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="reliability" class="band-dark">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Built to just work</div>
+        <h2>Appliance-grade, on purpose.</h2>
+        <p>This is a display, not a computer someone has to maintain. It's built to recover from problems on its own.</p>
+      </div>
+
+      <div class="grid3">
+        <div class="cardlet">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+          <h3>Updates itself</h3>
+          <p>New features and fixes ship automatically. Every update is verified before it's installed, and rolls back on its own if something's wrong.</p>
+        </div>
+        <div class="cardlet">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/></svg>
+          <h3>Self-healing</h3>
+          <p>A watchdog keeps the display honest — if anything on screen ever gets stuck, it recovers on its own, with nobody touching it.</p>
+        </div>
+        <div class="cardlet">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 7V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v3"/></svg>
+          <h3>Boots straight to the map</h3>
+          <p>No desktop, no login screen, no taskbar. Power goes out, power comes back — the display is right back where it left off.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Questions</div>
+        <h2>Before you ask — a few answers.</h2>
+      </div>
+
+      <div class="faq-list">
+        <div class="faq-item">
+          <h3>What does METARBoard show?</h3>
+          <p>A live sectional chart with real ADS-B traffic, your home airport's current conditions and flight category, active SIGMETs and AIRMETs, lightning strikes, a 12-hour weather trend, winds aloft, and sunrise/sunset — all on one always-on display.</p>
+        </div>
+        <div class="faq-item">
+          <h3>Is METARBoard safe to use for flight planning?</h3>
+          <p>No. METARBoard is a situational-awareness display for ground use in briefing rooms, lounges, and ramps. It is not a certified avionics product and should never be used as a primary source for flight planning or in-flight decision making — always consult official briefings, NOTAMs, and ATC.</p>
+        </div>
+        <div class="faq-item">
+          <h3>How is METARBoard set up?</h3>
+          <p>There's no keyboard, mouse, or IT ticket involved. On first boot the display broadcasts its own open WiFi network; a phone connects to it, opens one page, picks a home WiFi network and airport, and the display reloads itself automatically.</p>
+        </div>
+        <div class="faq-item">
+          <h3>Can METARBoard highlight my school's own aircraft?</h3>
+          <p>Yes. Up to 50 tail numbers can be listed as fleet aircraft and they render in magenta on the map, distinct from every other aircraft, so students learn to spot your fleet on sight.</p>
+        </div>
+        <div class="faq-item">
+          <h3>Does METARBoard need an internet connection to keep working?</h3>
+          <p>It needs WiFi to pull live weather, traffic, and hazard data, but the sectional and terminal charts themselves are stored on the device, and the display self-updates and self-heals without any IT maintenance.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" style="background:#fff;">
+    <div class="wrap">
+      <div class="cta">
+        <h2>Want one in your hangar?</h2>
+        <p>METARBoard is early — we're talking with flight schools and FBOs about getting displays into the field. Get in touch and let's talk about your space.</p>
+        <div class="ctarow">
+          <a href="mailto:support@metarboard.io" class="btn btn-amber">Email support@metarboard.io</a>
+        </div>
+      </div>
+    </div>
+  </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div class="fcol">
+        <div class="brand">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="width:22px;height:22px;color:var(--amber);"><path d="M22 16.5v-1.7l-9-4.5V5.3c0-1-.8-2.3-1.5-2.3s-1.5 1.3-1.5 2.3v4.9l-9 4.6v1.7l9-2.9v4.4l-2.5 2v1.5l4-1.2 4 1.2v-1.5l-2.5-2v-4.4l9 2.9Z"/></svg>
+          <span style="font-family:'Overpass',sans-serif;font-weight:800;letter-spacing:0.02em;text-transform:uppercase;color:#fff;">METARBoard</span>
+        </div>
+        <p>Aviation weather &amp; traffic display, built for the wall of a school, FBO, or hangar.</p>
+      </div>
+      <div class="fcol">
+        <p><a href="mailto:support@metarboard.io">support@metarboard.io</a></p>
+      </div>
+      <div class="fine" style="flex-basis:100%;">
+        METARBoard is a situational-awareness display for ground use — briefing rooms, lounges, and ramps. It is not a certified avionics product and must not be used as a primary source for flight planning or in-flight decision making; always consult official sources (briefings, NOTAMs, and ATC) before flying. © 2026 METARBoard.
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 589.26 96.2">
+  <!-- Generator: Adobe Illustrator 30.5.1, SVG Export Plug-In . SVG Version: 2.1.4 Build 3)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #0f2942;
+        font-size: 62px;
+        letter-spacing: .02em;
+      }
+
+      .st0, .st1 {
+        font-family: Arial-BoldMT, Arial;
+        font-weight: 700;
+        isolation: isolate;
+      }
+
+      .st1 {
+        font-size: 19px;
+        letter-spacing: .13em;
+      }
+
+      .st1, .st2 {
+        fill: #f5a623;
+      }
+    </style>
+  </defs>
+  <path class="st2" d="M109.2,70.2v-8.84l-46.8-23.4V11.96c0-5.2-4.16-11.96-7.8-11.96s-7.8,6.76-7.8,11.96v25.48L0,61.36v8.84l46.8-15.08v22.88l-13,10.4v7.8l20.8-6.24,20.8,6.24v-7.8l-13-10.4v-22.88s46.8,15.08,46.8,15.08Z"/>
+  <text class="st0" transform="translate(123.8 63.4)"><tspan x="0" y="0">METARBOARD</tspan></text>
+  <text class="st1" transform="translate(127.8 85.4)"><tspan x="0" y="0">AVIATION WEATHER &amp; TRAFFIC DISPLAY</tspan></text>
+</svg>
