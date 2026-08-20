@@ -608,7 +608,6 @@ loadSkyConditionmKeymap();
  * metars, tafs, airport info, etc.
  */
 let metarFeatures = new ol.Collection();
-let metarMarkers = [];
 let airportFeatures = new ol.Collection();
 let tafFeatures = new ol.Collection();
 let pirepFeatures = new ol.Collection();
@@ -664,6 +663,10 @@ let debugTileLayer;
 let radarFrameLayers = [];
 let radarFrameTimestamps = [];
 let currentRadarFrameIndex = 0;
+// Pending retryFailedTileLoads() timeouts - cleared whenever
+// refreshRadarFrames() tears down the sources they belong to, so a retry
+// firing for an already-discarded source can't accumulate every 5 minutes.
+let pendingTileRetryTimeoutIds = [];
 
 /**
  * Websocket objects, flag, and message definition
@@ -1166,15 +1169,29 @@ function connectStratuxSituation() {
 }
 
 /**
- * Add a qualified Traffic item to the traffic Map collection
- * @param {json object} jsondata 
+ * Add/refresh a qualified Traffic item in the traffic Map collection,
+ * without triggering a re-render - callers processing a batch of updates
+ * (e.g. one OpenSky poll response) should call this per item and then
+ * processTraffic() once at the end, instead of once per item, to avoid an
+ * O(n^2) rebuild of every aircraft's map feature/style for a batch of n.
+ * @param {json object} jsondata
  */
-function addTrafficItem(jsondata) {
+function upsertTrafficMapEntry(jsondata) {
     trafficMap.delete(jsondata.Icao_addr);
     if (jsondata.AgeLastAlt < 50 && jsondata.Speed > 0) {
         trafficMap.set(jsondata.Icao_addr, { ...jsondata, lastUpdated: Date.now() });
-        processTraffic();
     }
+}
+
+/**
+ * Add a single qualified Traffic item and immediately re-render - use this
+ * for one-off updates (e.g. a Stratux traffic websocket message); for a
+ * batch, call upsertTrafficMapEntry() per item and processTraffic() once.
+ * @param {json object} jsondata
+ */
+function addTrafficItem(jsondata) {
+    upsertTrafficMapEntry(jsondata);
+    processTraffic();
 }
 
 /**
@@ -1328,16 +1345,29 @@ const tfrStyle = new ol.style.Style({
 // passes - see the lightningVectorSource.changed() tick below.
 const LIGHTNING_DISPLAY_MAX_AGE_MS = 10 * 60 * 1000;
 
+// lightningStyle runs on every render for every strike - quantizing
+// opacity into buckets and caching the Style/Circle/Fill/Stroke per bucket
+// avoids reallocating all of them from scratch each tick for every strike.
+const lightningStyleCache = new Map();
+
 function lightningStyle(feature) {
     const ageMs = Date.now() - feature.get("time");
     const opacity = Math.max(0, 1 - ageMs / LIGHTNING_DISPLAY_MAX_AGE_MS);
-    return new ol.style.Style({
+    const bucket = Math.round(opacity * 20); // 21 buckets, 5% steps
+
+    const cached = lightningStyleCache.get(bucket);
+    if (cached) return cached;
+
+    const bucketOpacity = bucket / 20;
+    const style = new ol.style.Style({
         image: new ol.style.Circle({
             radius: 5,
-            fill: new ol.style.Fill({ color: `rgba(255, 235, 60, ${opacity})` }),
-            stroke: new ol.style.Stroke({ color: `rgba(120, 90, 0, ${opacity * 0.9})`, width: 1 })
+            fill: new ol.style.Fill({ color: `rgba(255, 235, 60, ${bucketOpacity})` }),
+            stroke: new ol.style.Stroke({ color: `rgba(120, 90, 0, ${bucketOpacity * 0.9})`, width: 1 })
         })
     });
+    lightningStyleCache.set(bucket, style);
+    return style;
 }
 
 // Color-coded by hazard type, same map-lookup-with-default pattern as
@@ -1541,6 +1571,8 @@ regionselect.addEventListener('change', (event) => {
  * Called by select event to manipulate features
  * @param {*} criteria: string
  */
+const hiddenFeatureStyle = new ol.style.Style(undefined);
+
 function selectFeaturesByCriteria() {
     airportFeatures.forEach((feature) => {
         let type = feature.get("type");
@@ -1551,14 +1583,14 @@ function selectFeaturesByCriteria() {
         else {
             feature.setStyle(airportStyle);
         }
-        if (lastcriteria === "small_airport" || lastcriteria === "medium_airport" || 
+        if (lastcriteria === "small_airport" || lastcriteria === "medium_airport" ||
             lastcriteria === "large_airport" || lastcriteria === "heliport") {
             if (type !== lastcriteria) {
-                feature.setStyle(new ol.style.Style(undefined));
+                feature.setStyle(hiddenFeatureStyle);
             }
         }
         else if (country !== lastcriteria && lastcriteria !== "allregions") {
-            feature.setStyle(new ol.style.Style(undefined));        
+            feature.setStyle(hiddenFeatureStyle);
         }
     });
 }
@@ -2404,7 +2436,6 @@ function processTraffic() {
     let newmetars = metarsobject.response.data.METAR;
     if (newmetars !== undefined) {
         metarFeatures.clear();
-        metarMarkers = [];
         let scaleSize = getScaleSize();
         try {
             newmetars.forEach((metar) => {
@@ -2576,9 +2607,6 @@ function resizeDots(newzoom) {
         resizing = true;
         currentZoom = parseInt(newzoom.toFixed(0));
         let newscale = getScaleSize();
-        for (let i = 0; i < metarMarkers.length; i++) {
-            metarMarkers[i].setScale(newscale);
-        }
         //pirepMarker.setScale(newscale * .08);
         airportMarker.setScale(newscale);
         heliportMarker.setScale(newscale);
@@ -2920,7 +2948,8 @@ function retryFailedTileLoads(source) {
         const tile = event.tile;
         tile.retryCount = (tile.retryCount || 0) + 1;
         if (tile.retryCount <= TILE_LOAD_MAX_RETRIES) {
-            setTimeout(() => tile.load(), TILE_LOAD_RETRY_DELAY_MS * tile.retryCount);
+            const timeoutId = setTimeout(() => tile.load(), TILE_LOAD_RETRY_DELAY_MS * tile.retryCount);
+            pendingTileRetryTimeoutIds.push(timeoutId);
         }
     });
 }
@@ -2965,6 +2994,8 @@ function refreshRadarFrames() {
     radarFrameLayers.forEach(layer => map.removeLayer(layer));
     radarFrameLayers = [];
     radarFrameTimestamps = [];
+    pendingTileRetryTimeoutIds.forEach(id => clearTimeout(id));
+    pendingTileRetryTimeoutIds = [];
     setupRadarAnimation();
     if (wasPlaying) {
         playWeatherRadar();
@@ -3064,12 +3095,13 @@ setInterval(() => {
                         Track: heading,
                         AgeLastAlt: 0
                     };
-                    addTrafficItem(trafficData);
+                    upsertTrafficMapEntry(trafficData);
                     if (icao24 && !aircraftInfoCache.has(icao24.toLowerCase())) {
                         unknownIcao24s.add(icao24.toLowerCase());
                     }
                 }
             });
+            processTraffic();
 
             if (unknownIcao24s.size > 0) {
                 fetchAircraftInfo([...unknownIcao24s]);
@@ -3083,6 +3115,13 @@ setInterval(() => {
  * for whichever icao24s haven't been looked up yet, then re-render traffic
  * so icons/popups pick up the newly-cached info.
  */
+// Every icao24 ever seen nearby gets cached forever with no natural
+// expiry (unlike trafficMap, which prunes on TRAFFIC_TTL_MS) - cap it so
+// weeks of unattended uptime near a busy airspace can't grow it without
+// bound. Map iterates in insertion order, so evicting from the front is a
+// cheap approximate LRU.
+const AIRCRAFT_INFO_CACHE_MAX_ENTRIES = 5000;
+
 function fetchAircraftInfo(icao24List) {
     fetch(`${URL_SERVER}/aircraft/batch`, {
         method: "POST",
@@ -3095,6 +3134,9 @@ function fetchAircraftInfo(icao24List) {
             icao24List.forEach(icao24 => {
                 aircraftInfoCache.set(icao24, found[icao24] || null);
             });
+            while (aircraftInfoCache.size > AIRCRAFT_INFO_CACHE_MAX_ENTRIES) {
+                aircraftInfoCache.delete(aircraftInfoCache.keys().next().value);
+            }
             processTraffic();
         })
         .catch(err => console.error("Aircraft info fetch error:", err));

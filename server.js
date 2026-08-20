@@ -143,13 +143,19 @@ function loadSettings() {
 
 /**
  * Atomically write settings.json (write to a temp file, then rename over
- * the real file) so a power loss mid-write can't leave it corrupted.
+ * the real file) so a power loss mid-write can't leave it corrupted, and
+ * update the in-memory `settings` singleton so the rest of the process
+ * (which never touches disk to read a setting) sees the change immediately.
+ * This process is the sole writer of settings.json while running - external
+ * edits are documented to require a service restart (provisioning/README.md)
+ * - so `settings` staying in lockstep with disk is safe to rely on.
  */
 function writeSettings(newSettings) {
     let target = `${DATA_DIR}/settings.json`;
     let tmp = `${target}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(newSettings, null, "    "));
     fs.renameSync(tmp, target);
+    settings = newSettings;
 }
 
 let settings = loadSettings();
@@ -283,8 +289,7 @@ function connectToLightningFeed() {
         // raw feed is worldwide and far too high-volume to buffer whole.
         // No home airport coords resolved -> nothing to compare against,
         // so drop everything rather than buffer the entire planet.
-        const currentSettings = loadSettings();
-        const homeCoords = airportCoordsByIdent.get(String(currentSettings.homeAirport || "").trim().toUpperCase());
+        const homeCoords = airportCoordsByIdent.get(String(settings.homeAirport || "").trim().toUpperCase());
         if (!homeCoords) return;
         if (haversineNm(homeCoords.lat, homeCoords.lon, strike.lat, strike.lon) > LIGHTNING_RADIUS_NM) return;
 
@@ -442,6 +447,15 @@ let aircraftDb;
 const databaselist = new Map();
 const databases    = new Map();
 const metadatasets = new Map();
+// Prepared lazily on first use and cached - re-preparing the same SQL on
+// every request wastes CPU on the tile-serving/position-history hot paths.
+let positionHistorySelectStmt = null;
+let positionHistoryInsertStmt = null;
+// keyed by the mbtiles Database instance itself, since each chart db is a
+// distinct better-sqlite3 connection and a prepared statement is bound to
+// the connection it was prepared on. Bounded by the fixed set of chart dbs
+// loaded once at startup (loadDatabases), so a plain Map is fine.
+const tileSelectStmtByDb = new Map();
 
 /*
  * Load airports.json for immediate sending to client later upon winsock connection
@@ -639,39 +653,35 @@ try {
     }
 
     function isAdminAuthed(req) {
-        const currentSettings = loadSettings();
-        if (!currentSettings.adminPasswordHash) return true;
+        if (!settings.adminPasswordHash) return true;
 
         const token = getCookie(req, "metarboard_admin") || "";
         const [expiresAtRaw, signature] = token.split(".");
         const expiresAt = Number(expiresAtRaw);
         if (!Number.isFinite(expiresAt) || expiresAt < Date.now() || !signature) return false;
 
-        const expected = signAdminSessionToken(currentSettings.adminPasswordHash, expiresAt);
+        const expected = signAdminSessionToken(settings.adminPasswordHash, expiresAt);
         if (expected.length !== signature.length) return false;
         return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
     }
 
     function startAdminSession(res) {
-        const currentSettings = loadSettings();
         const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
-        const signature = signAdminSessionToken(currentSettings.adminPasswordHash, expiresAt);
+        const signature = signAdminSessionToken(settings.adminPasswordHash, expiresAt);
         res.setHeader("Set-Cookie", `metarboard_admin=${expiresAt}.${signature}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ADMIN_SESSION_TTL_MS / 1000}`);
     }
 
     app.get('/admin/session', (req, res) => {
-        const currentSettings = loadSettings();
         res.writeHead(200);
         res.end(JSON.stringify({
-            passwordSet: !!currentSettings.adminPasswordHash,
+            passwordSet: !!settings.adminPasswordHash,
             authed: isAdminAuthed(req)
         }));
     });
 
     app.post('/admin/login', (req, res) => {
-        const currentSettings = loadSettings();
         const password = String(req.body?.password || "");
-        if (!currentSettings.adminPasswordHash || hashPassword(password) !== currentSettings.adminPasswordHash) {
+        if (!settings.adminPasswordHash || hashPassword(password) !== settings.adminPasswordHash) {
             res.writeHead(401);
             res.end(JSON.stringify({ error: "Incorrect password" }));
             return;
@@ -685,8 +695,7 @@ try {
     // bootstrap on a device that never went through the setup wizard);
     // once one exists, changing it requires an authenticated session.
     app.post('/admin/set-password', (req, res) => {
-        const currentSettings = loadSettings();
-        if (currentSettings.adminPasswordHash && !isAdminAuthed(req)) {
+        if (settings.adminPasswordHash && !isAdminAuthed(req)) {
             res.writeHead(401);
             res.end(JSON.stringify({ error: "Not authenticated" }));
             return;
@@ -699,7 +708,7 @@ try {
             return;
         }
 
-        writeSettings({ ...currentSettings, adminPasswordHash: hashPassword(password) });
+        writeSettings({ ...settings, adminPasswordHash: hashPassword(password) });
         startAdminSession(res);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
@@ -837,8 +846,7 @@ try {
                         return;
                     }
 
-                    const currentSettings = loadSettings();
-                    const newSettings = { ...currentSettings, homeAirport, adminPasswordHash: hashPassword(adminPassword) };
+                    const newSettings = { ...settings, homeAirport, adminPasswordHash: hashPassword(adminPassword) };
                     if (timezone) newSettings.timezone = timezone;
                     writeSettings(newSettings);
 
@@ -927,11 +935,11 @@ try {
     });
 
     app.get("/getsettings", (req, res) => {
-    let rawdata = fs.readFileSync(`${DATA_DIR}/settings.json`);
-    let json = JSON.parse(rawdata);
     // This endpoint is intentionally public/unauthenticated (the kiosk
     // itself reads its own config here) - never include the password
-    // hash in a response nothing gates access to.
+    // hash in a response nothing gates access to. Cloned rather than
+    // mutated in place, since `settings` is the shared in-memory singleton.
+    let json = { ...settings };
     delete json.adminPasswordHash;
 
     // Not persisted settings - derived fresh per request so the on-screen
@@ -1021,8 +1029,7 @@ try {
             updates[key] = validated;
         }
 
-        const currentSettings = loadSettings();
-        const newSettings = { ...currentSettings, ...updates };
+        const newSettings = { ...settings, ...updates };
         writeSettings(newSettings);
         sendMessageToClients(JSON.stringify({ type: "settingsupdated", payload: "{}" }));
 
@@ -1104,8 +1111,7 @@ try {
     // every page load. Returns an empty FeatureCollection (not an error) for
     // airports with no charted controlled airspace, or on any fetch failure.
     app.get("/homeairspace", async (req, res) => {
-        const currentSettings = loadSettings();
-        const icao = String(currentSettings.homeAirport || "").trim().toUpperCase();
+        const icao = String(settings.homeAirport || "").trim().toUpperCase();
         const emptyCollection = { type: "FeatureCollection", features: [] };
 
         if (!/^[A-Z0-9]{3,4}$/.test(icao)) {
@@ -1345,8 +1351,7 @@ try {
     // airport's own forecast.
     app.get("/windsaloft", async (req, res) => {
         const empty = { station: null, distanceNm: null, levels: [] };
-        const currentSettings = loadSettings();
-        const homeIdent = String(currentSettings.homeAirport || "").trim().toUpperCase();
+        const homeIdent = String(settings.homeAirport || "").trim().toUpperCase();
         const homeCoords = airportCoordsByIdent.get(homeIdent);
 
         if (!homeCoords) {
@@ -1407,8 +1412,7 @@ try {
     // observations.
     app.get("/metartrend", async (req, res) => {
         const empty = { station: null, observations: [] };
-        const currentSettings = loadSettings();
-        const homeIdent = String(currentSettings.homeAirport || "").trim().toUpperCase();
+        const homeIdent = String(settings.homeAirport || "").trim().toUpperCase();
 
         if (!homeIdent) {
             res.writeHead(200);
@@ -1506,8 +1510,12 @@ function getPositionHistory(response) {
         return;
     }
     try {
-        let sql = "SELECT * FROM position_history WHERE id IN ( SELECT max( id ) FROM position_history )";
-        let row = histdb.prepare(sql).get();
+        if (!positionHistorySelectStmt) {
+            positionHistorySelectStmt = histdb.prepare(
+                "SELECT * FROM position_history WHERE id IN ( SELECT max( id ) FROM position_history )"
+            );
+        }
+        let row = positionHistorySelectStmt.get();
         if (row !== undefined) {
             let obj = {
                 longitude: row.longitude,
@@ -1540,12 +1548,16 @@ function savePositionHistory(data) {
         return;
     }
     let datetime = new Date().toISOString();
-    let sql = `INSERT INTO position_history (datetime, longitude, latitude, heading, gpsaltitude) ` +
-              `VALUES (?, ?, ?, ?, ?)`;
     let params = [datetime, data.longitude, data.latitude, data.heading, data.altitude];
 
     try {
-        histdb.prepare(sql).run(...params);
+        if (!positionHistoryInsertStmt) {
+            positionHistoryInsertStmt = histdb.prepare(
+                `INSERT INTO position_history (datetime, longitude, latitude, heading, gpsaltitude) ` +
+                `VALUES (?, ?, ?, ?, ?)`
+            );
+        }
+        positionHistoryInsertStmt.run(...params);
         console.log(`position: ${params.join(', ')}`);
     }
     catch (err) {
@@ -1578,7 +1590,7 @@ function handleTile(request, response, db) {
 
     } 
     catch(err) {
-        res.writeHead(500, "Failed to parse y");
+        response.writeHead(500, "Failed to parse y");
         response.end();
         return;
     }
@@ -1607,8 +1619,12 @@ function loadTile(z, x, y, response, db) {
         return;
     }
     try {
-        let sql = `SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?`;
-        let row = db.prepare(sql).get(z, x, y);
+        let stmt = tileSelectStmtByDb.get(db);
+        if (!stmt) {
+            stmt = db.prepare(`SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?`);
+            tileSelectStmtByDb.set(db, stmt);
+        }
+        let row = stmt.get(z, x, y);
         if (row !== undefined && row.tile_data != undefined) {
             // Chart tiles are immutable for the lifetime of a deployed FAA
             // chart cycle - cache aggressively so repeat views/reloads never
@@ -1679,8 +1695,8 @@ function loadMetadatasets() {
 function tileToDegree(z, x, y) {
 	y = (1 << z) - y - 1
     let n = Math.PI - 2.0*Math.PI*y/Math.pow(2, z);
-    lat = 180.0 / Math.PI * Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
-    lon = x/Math.pow(2, z)*360.0 - 180.0;
+    let lat = 180.0 / Math.PI * Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
+    let lon = x/Math.pow(2, z)*360.0 - 180.0;
     return [lon, lat]
 }
 
@@ -1747,22 +1763,30 @@ async function downloadXmlFile(source) {
     xhr.setRequestHeader("Access-Control-Allow-Origin", "*");
     xhr.setRequestHeader('Access-Control-Allow-Methods', '*');
     xhr.setRequestHeader("Access-Control-Allow-Headers", "*");
-    xhr.responseType = 'document';
+    // 'text' (not 'document') - the xmlhttprequest package's 'document'
+    // mode does its own internal DOM parse of the response that's then
+    // thrown away in favor of xmlparser.parse() below, parsing the same
+    // XML twice on every poll for no benefit.
+    xhr.responseType = 'text';
     xhr.onload = () => {
         if (xhr.readyState == 4 && xhr.status == 200) {
-            let response = xhr.responseText;
-            //var mxml = unzipSync(new Buffer.From(response).toString('base64'));
-            let messageJSON = xmlparser.parse(response);
-            switch(source.type) {
-                case "tafs":
-                    processTafJsonObjects(messageJSON);
-                    break;
-                case "metars":
-                    processMetarJsonObjects(messageJSON);
-                    break;
-                case "aircraftreports":
-                    processPirepJsonObjects(messageJSON);
-                    break;
+            try {
+                let response = xhr.responseText;
+                let messageJSON = xmlparser.parse(response);
+                switch(source.type) {
+                    case "tafs":
+                        broadcastWeatherUpdate(MessageTypes.tafs, messageJSON);
+                        break;
+                    case "metars":
+                        broadcastWeatherUpdate(MessageTypes.metars, messageJSON);
+                        break;
+                    case "aircraftreports":
+                        broadcastWeatherUpdate(MessageTypes.pireps, messageJSON);
+                        break;
+                }
+            }
+            catch (err) {
+                console.log(`Failed to parse/process ${source.type} response: ${err.message}`);
             }
         }
         else {
@@ -1785,45 +1809,18 @@ async function downloadXmlFile(source) {
 }
 
 /**
- * Process the received downloaded tafs data and send to client(s)
- * @param {object} tafs json object 
+ * Wrap a downloaded weather JSON object in the right message type and
+ * broadcast it to connected clients - tafs/metars/pireps only differ in
+ * which MessageTypes entry they're tagged with.
+ * @param {object} messageType one of MessageTypes.{tafs,metars,pireps}
+ * @param {object} jsonObj downloaded/parsed weather data
  */
-async function processTafJsonObjects(tafs) {
-    let payload = JSON.stringify(tafs); 
-    let message = {
-        type: MessageTypes.tafs.type,
-        payload: payload
+async function broadcastWeatherUpdate(messageType, jsonObj) {
+    const message = {
+        type: messageType.type,
+        payload: JSON.stringify(jsonObj)
     };
-    const json = JSON.stringify(message);
-    sendMessageToClients(json);
-}
-
-/**
- * Process the received downloaded metars data and send to client(s)
- * @param {object} metars json object 
- */
-async function processMetarJsonObjects(metars) {
-    let payload = JSON.stringify(metars);
-    let message = {
-        type: MessageTypes.metars.type,
-        payload: payload
-    };
-    const json = JSON.stringify(message);
-    sendMessageToClients(json);
-}
-
-/**
- * Process the received downloaded pireps data and send to client(s)
- * @param {object} pireps json object 
- */
-async function processPirepJsonObjects(pireps) {
-    let payload = JSON.stringify(pireps);
-    let message = {
-        type: MessageTypes.pireps.type,
-        payload: payload
-    }
-    const json = JSON.stringify(message);
-    sendMessageToClients(json);
+    sendMessageToClients(JSON.stringify(message));
 }
 
 /**
@@ -1832,6 +1829,12 @@ async function processPirepJsonObjects(pireps) {
  */
 async function sendMessageToClients(jsonmessage) {
     [...connections.keys()].forEach((client) => {
-        client.send(jsonmessage);
+        if (client.readyState !== WebSocket.OPEN) return;
+        try {
+            client.send(jsonmessage);
+        }
+        catch (err) {
+            console.log(`Failed to send to a client, dropping it: ${err.message}`);
+        }
     });
 }
