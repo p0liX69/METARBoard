@@ -24,8 +24,20 @@ FLAG_FILE="${DATA_DIR}/setup-mode-active"
 HOTSPOT_SSID="METARBoard Setup"
 HOTSPOT_CON_NAME="METARBoard Setup"
 WIFI_IFNAME="wlan0"
+NMCLI_TIMEOUT_SEC=15
 
 mkdir -p "${DATA_DIR}"
+
+# Every nmcli call below runs under `timeout` - checking its exit code
+# (see below) only helps if nmcli actually returns. A hung D-Bus call to
+# NetworkManager (daemon unresponsive, etc.) would otherwise block
+# indefinitely, relying on systemd's blunt service-level timeout to ever
+# kill it - which would take the whole script down, flag file and all,
+# before reaching the "always touch the flag" logic that exists
+# specifically to avoid that.
+nmcli() {
+    timeout "${NMCLI_TIMEOUT_SEC}" /usr/bin/nmcli "$@"
+}
 
 # `nmcli general status CONNECTIVITY` is a single point-in-time read with
 # no wait for DHCP to finish, and reports "unknown" unless
