@@ -1842,6 +1842,9 @@ function describeFlightCategory(cat) {
     </table>
     <div class="wind-graphic">${svg}</div>
     <textarea class="rawdata">${escapeHtml(rawmetar)}</textarea>
+    ${settings && (settings.deviceHostname || settings.deviceIp)
+        ? `<div class="metar-devicefooter">${escapeHtml(settings.deviceHostname || "")}${settings.deviceHostname && settings.deviceIp ? " &middot; " : ""}${escapeHtml(settings.deviceIp || "")}</div>`
+        : ""}
   `;
         const existingBox = document.getElementById("homeMetarBox");
         if (existingBox) {

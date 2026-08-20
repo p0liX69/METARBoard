@@ -610,6 +610,17 @@ hr {
     border: 1px solid #ccc;
 }
 
+/* Deliberately tiny/muted - a debugging aid for whoever's setting up or
+   troubleshooting the display, not something a normal user needs to
+   notice. */
+.static-metar-popup .metar-devicefooter {
+    margin-top: 4px;
+    text-align: center;
+    font-family: monospace;
+    font-size: 10px;
+    color: #999;
+}
+
 .metar-category {
     font-weight: bold;
     padding: 2px 6px;

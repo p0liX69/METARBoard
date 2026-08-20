@@ -392,6 +392,13 @@ function parseLowAltitudeWindsAloft(text) {
    external volume for the database folder exists, if so,
    use it
 *******************************************************/
+/** First non-loopback IPv4 address, for the on-screen debug footer - null if none (e.g. no network yet). */
+function getLocalIpAddress() {
+    const interfaces = Object.values(os.networkInterfaces()).flat();
+    const address = interfaces.find((iface) => iface && iface.family === "IPv4" && !iface.internal);
+    return address ? address.address : null;
+}
+
 function isRunningInDocker() {
     let isdocker = fs.existsSync('/.dockerenv');
     if (isdocker) {
@@ -926,6 +933,12 @@ try {
     // itself reads its own config here) - never include the password
     // hash in a response nothing gates access to.
     delete json.adminPasswordHash;
+
+    // Not persisted settings - derived fresh per request so the on-screen
+    // debug footer (see displayMetarPopup) always shows this device's
+    // actual current hostname/LAN IP, e.g. after a DHCP lease renewal.
+    json.deviceHostname = os.hostname();
+    json.deviceIp = getLocalIpAddress();
 
     res.writeHead(200);
     res.write(JSON.stringify(json));
