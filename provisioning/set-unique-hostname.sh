@@ -23,6 +23,26 @@ HOSTNAME_PREFIX="metarboard-"
 
 mkdir -p "${DATA_DIR}"
 
+# Reconcile /etc/hosts's 127.0.1.1 entry with the live kernel hostname on
+# EVERY boot, before the first-boot early-return below. The setup wizard's
+# "Name This Display" rename (server.js /setup/complete) changes the
+# hostname via hostnamectl but runs unprivileged and can't edit /etc/hosts,
+# so that path leaves a stale 127.0.1.1 name - harmless to mDNS (avahi uses
+# the live hostname) but it makes every later sudo print "unable to resolve
+# host". Fixing it here means the next boot self-heals it. Idempotent: only
+# rewrites the line when it doesn't already list the current hostname.
+CURRENT_HOSTNAME="$(hostname)"
+if [[ -f /etc/hosts && -n "${CURRENT_HOSTNAME}" ]]; then
+    if ! grep -qE "^127\.0\.1\.1[[:space:]]+.*(^|[[:space:]])${CURRENT_HOSTNAME}([[:space:]]|\$)" /etc/hosts; then
+        if grep -qE "^127\.0\.1\.1[[:space:]]" /etc/hosts; then
+            sed -i -E "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t${CURRENT_HOSTNAME} METARBoard/" /etc/hosts
+        else
+            printf '127.0.1.1\t%s METARBoard\n' "${CURRENT_HOSTNAME}" >> /etc/hosts
+        fi
+        echo "[set-unique-hostname] reconciled /etc/hosts 127.0.1.1 -> ${CURRENT_HOSTNAME}"
+    fi
+fi
+
 if [[ -f "${HOSTNAME_FLAG}" ]]; then
     echo "[set-unique-hostname] already initialized - nothing to do"
     exit 0
