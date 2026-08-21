@@ -1,6 +1,6 @@
 {
   "name": "METARBoard",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Aviation and Weather Maps",
   "main": "server.js",
   "author": "Todd Shipway",

@@ -125,6 +125,7 @@ cp "${REPO_ROOT}/install/metarboard-update.service" /etc/systemd/system/metarboa
 cp "${REPO_ROOT}/install/metarboard-update.timer" /etc/systemd/system/metarboard-update.timer
 cp "${REPO_ROOT}/install/metarboard-network-setup.service" /etc/systemd/system/metarboard-network-setup.service
 cp "${REPO_ROOT}/install/metarboard-hostname.service" /etc/systemd/system/metarboard-hostname.service
+cp "${REPO_ROOT}/install/metarboard-port80.service" /etc/systemd/system/metarboard-port80.service
 mkdir -p /etc/systemd/journald.conf.d
 cp "${REPO_ROOT}/install/journald-size-cap.conf" /etc/systemd/journald.conf.d/metarboard-size-cap.conf
 systemctl restart systemd-journald
@@ -133,6 +134,7 @@ systemctl enable --now metarboard-hostname
 systemctl enable --now metarboard-network-setup
 systemctl enable --now metarboard
 systemctl enable --now metarboard-update.timer
+systemctl enable --now metarboard-port80
 
 echo "==> Installing METARBoard boot splash (if plymouth is present)"
 if [[ -x /usr/sbin/plymouth-set-default-theme ]]; then
@@ -152,4 +154,4 @@ echo "==> Done. METARBoard should be starting now."
 echo "    Check status:  systemctl status metarboard"
 echo "    View logs:     journalctl -u metarboard -f"
 IP_ADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
-echo "    Open in a browser: http://${IP_ADDR:-<pi-ip>}:8500"
+echo "    Open in a browser: http://${IP_ADDR:-<pi-ip>}   (or :8500)"

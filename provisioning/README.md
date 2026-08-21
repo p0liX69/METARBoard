@@ -121,7 +121,9 @@ journalctl -u metarboard -f      # live logs
 curl -s http://localhost:8500/databaselist   # should list your chart regions, not []
 ```
 
-Then open `http://<pi-ip>:8500` in a browser.
+Then open `http://<pi-ip>` in a browser (a boot-time nftables rule
+redirects port 80 → 8500, so no `:8500` is needed; `http://<pi-ip>:8500`
+still works too).
 
 ## 7. Configure
 
@@ -129,7 +131,7 @@ From any device on the same network (phone, laptop — no keyboard/mouse on
 the appliance itself required), open:
 
 ```
-http://<pi-ip>:8500/admin
+http://<pi-ip>/admin
 ```
 
 This lets you set the home airport, and toggle the default radar background
@@ -140,8 +142,9 @@ within a second or two — no need to touch the appliance.
 The setup wizard has you set an admin password, which gates changes made
 through this page (a signed session cookie, rate-limited login) — but there's
 still no encryption in transit (plain HTTP) and no auth at all on a device
-that never went through setup, so don't expose port 8500 to the open
-internet regardless. For settings not covered by the admin page (Stratux IP,
+that never went through setup, so don't expose the device to the open
+internet regardless (ports 80 and 8500 both reach it — 80 redirects to
+8500). For settings not covered by the admin page (Stratux IP,
 ports, etc.), edit `/opt/metarboard-data/settings.json` directly and
 `sudo systemctl restart metarboard`.
 
@@ -320,10 +323,12 @@ credentials on it yet:
    open a browser to this address" - not the wizard form itself. The
    customer does the actual setup on their **phone or laptop**: connect
    to the `METARBoard Setup` network, open a browser, and go to
-   `http://10.42.0.1:8500` (NetworkManager's default gateway address for
+   `http://10.42.0.1` (NetworkManager's default gateway address for
    a shared/hotspot connection - confirm this is actually what's assigned
    when testing on real hardware, since this is customer-facing and
-   worth getting exactly right).
+   worth getting exactly right). The boot-time port 80 → 8500 redirect
+   (`metarboard-port80.service`) covers the hotspot interface too, so no
+   `:8500` is needed here.
 
    Both the TV and the phone hit the same `/` route while setup mode is
    active - `server.js` tells them apart by request origin (the kiosk's
@@ -341,7 +346,7 @@ credentials on it yet:
 4. On submit, the device connects to that network, saves the settings,
    and the kiosk display reloads into the normal map view - no reboot,
    no SSH, no command line. The success message reports the device's
-   final mDNS address (e.g. `metarboard-front-desk.local:8500/admin`) so
+   final mDNS address (e.g. `metarboard-front-desk.local/admin`) so
    the customer has something to note down for later.
 
 If setup is interrupted (power loss, walked away) the hotspot just stays

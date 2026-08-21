@@ -1,0 +1,23 @@
+[Unit]
+Description=METARBoard port 80 -> 8500 redirect
+# The redirect is a static kernel nat rule - it doesn't need the network
+# to be up, only to be in place before any client connects. Ordering it
+# before network-pre.target keeps it independent of (and unaffected by)
+# metarboard-network-setup.service's hotspot/connection juggling.
+DefaultDependencies=no
+After=nftables.service
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+# RemainAfterExit so the unit shows active after the rule is installed,
+# and so a `systemctl restart` cleanly re-applies it. Run via the
+# /opt/metarboard symlink (same pattern as metarboard-update.service) so
+# an OTA update that ships a changed redirect script picks it up on the
+# next boot with no re-provisioning.
+RemainAfterExit=yes
+ExecStart=/opt/metarboard/provisioning/apply-port80-redirect.sh
+
+[Install]
+WantedBy=multi-user.target

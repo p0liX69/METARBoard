@@ -484,7 +484,7 @@
           if (status.state === "success") {
             stopStatusPolling();
             setLoading(true, "Connected!");
-            const address = status.hostname ? `${status.hostname}.local:8500/admin` : "the device's address on your network, port 8500";
+            const address = status.hostname ? `${status.hostname}.local/admin` : "the device's address on your network";
             setStatus(`Connected! To change settings later, visit ${address} from any device on this WiFi. Loading your display...`, "success");
             setTimeout(() => location.reload(), 6000);
           }

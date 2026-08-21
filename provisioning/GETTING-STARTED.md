@@ -63,7 +63,7 @@ sudo reboot
 Plug the Pi into your TV/monitor via HDMI if you haven't already. After
 it boots, the screen will show setup instructions - connect a phone or
 laptop to the **METARBoard Setup** WiFi network it broadcasts, then
-open a browser to `10.42.0.1:8500`. From there you can:
+open a browser to `10.42.0.1`. From there you can:
 
 - Pick your home WiFi network and enter the password
 - Enter your home airport code (e.g. `KJFK`)
