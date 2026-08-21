@@ -24,21 +24,6 @@
 # an appliance that should reflect current server settings, not months-old
 # cached state.
 #
-# Chromium's SingletonLock records the hostname it was created under, and
-# refuses to break the lock itself if the *current* hostname doesn't match
-# (a deliberate safety check for shared/NFS-mounted profile directories on
-# different machines) - it just silently fails to open a window forever,
-# with no error visible anywhere but its own stderr. Confirmed live: this
-# device rebooted after its hostname changed (support for that shipped in
-# v1.3.0's setup wizard "Name This Display" field) and came up sitting at
-# the bare desktop with Chromium crash-looping invisibly underneath. This
-# is a single-purpose kiosk - there is never a legitimate second real
-# instance whose lock this could actually be protecting, so it's always
-# safe to clear it before every fresh session start.
-rm -f "${HOME}/.config/chromium/SingletonLock" \
-      "${HOME}/.config/chromium/SingletonCookie" \
-      "${HOME}/.config/chromium/SingletonSocket"
-
 /usr/bin/kanshi &
 
 # Shows the METARBoard mark on the same navy background as the boot splash
@@ -62,43 +47,42 @@ rm -f "${HOME}/.config/chromium/SingletonLock" \
 # own - confusing on an appliance with no keyboard/mouse to tell someone
 # it's not actually broken. Waiting here for a real 200 before ever
 # launching Chromium means the very first navigation just succeeds.
-# Capped at 30s worst case (10 attempts x up to 2s each + 1s sleep) so a
-# genuinely broken backend doesn't block the kiosk forever - lwrespawn/the
-# watchdog still cover that case afterward. --max-time on curl is not
-# optional here - confirmed live that a single hung attempt with no
-# timeout can stall this loop forever, which is worse than the problem
-# it's meant to fix (it never reaches the sleep/next-iteration, let alone
-# the chromium launch below).
-for i in $(seq 1 10); do
+# The loop breaks the instant /health returns 200, so a healthy backend
+# never adds delay here regardless of the cap - the cap only bounds how
+# long we wait on a backend that's slow or broken. 10 attempts (~13s) was
+# confirmed live to be too short on this CM5: the node process wasn't
+# serving /health until ~20s into boot (systemd "Started" plus chart/db
+# load), so Chromium launched into ERR_CONNECTION_REFUSED anyway. Raised
+# to 60 (~60s typical, more if a hung backend keeps hitting the 2s curl
+# timeout) - the loading background stays on screen the whole time, which
+# is the intended "still starting" indication, so a longer wait here just
+# means a nicer screen for longer, never an error. A genuinely broken
+# backend is still ultimately covered by lwrespawn/the watchdog after the
+# cap. --max-time on curl is not optional - confirmed live that a single
+# hung attempt with no timeout can stall this loop forever.
+for i in $(seq 1 60); do
     curl -s -o /dev/null --max-time 2 http://localhost:8500/health && break
     sleep 1
 done
 
-# --ozone-platform=wayland: without this, Chromium "auto"-detects the
-# platform at startup, and confirmed live that adding the backend-wait
-# loop above somehow makes that auto-detection pick X11 instead of
-# Wayland on this hardware - it then dies instantly and repeatedly
-# ("Missing X server or $DISPLAY"), which lwrespawn just relaunches into
-# the same failure forever (a tight crash loop, not the slow recovery the
-# watchdog is built for - zero renderer/GPU process ever spawns). Forcing
-# Wayland explicitly removes the ambiguity outright rather than relying
-# on auto-detection to keep guessing right - this is a fixed, Wayland-only
-# kiosk, so there is nothing to actually auto-detect.
-/usr/bin/lwrespawn /usr/bin/chromium \
-    --kiosk \
-    --incognito \
-    --noerrdialogs \
-    --disable-infobars \
-    --disable-session-crashed-bubble \
-    --disable-translate \
-    --overscroll-history-navigation=0 \
-    --check-for-update-interval=31536000 \
-    --password-store=basic \
-    --start-fullscreen \
-    --ozone-platform=wayland \
-    --remote-debugging-port=9223 \
-    --remote-debugging-address=127.0.0.1 \
-    http://localhost:8500 &
+# Launch Chromium under lwrespawn via a dedicated launcher script
+# (kiosk-chromium-launch.sh) that clears Chromium's stale SingletonLock
+# before EVERY (re)launch - the setup wizard's "Name This Display" rename
+# changes the hostname at runtime, and Chromium refuses a lock created
+# under a different hostname, crash-looping invisibly otherwise. Clearing
+# once at session start isn't enough because lwrespawn relaunches by
+# re-running only its command, not this whole script - see that script's
+# header for the full rationale (and the Wayland/incognito/etc. flags).
+#
+# Invoked as `/bin/sh <path>`, not the script directly, for three reasons:
+# lwrespawn does `pgrep $1` and bails if it matches (a bare `sh` would
+# match every shell; the literal `/bin/sh` string matches no process
+# name), it re-runs its args with an UNQUOTED `$@` (so an inline `sh -c`
+# quoted command gets word-split and shattered - a plain path can't), and
+# `/bin/sh <path>` doesn't depend on the script's exec bit surviving a
+# release tarball's extraction. Referenced via the /opt/metarboard symlink
+# (like chromium-watchdog.sh) so OTA updates carry launcher/flag changes.
+/usr/bin/lwrespawn /bin/sh /opt/metarboard/provisioning/kiosk-chromium-launch.sh &
 
 # --remote-debugging-port above is loopback-only (127.0.0.1, never exposed
 # on the network) and exists solely so chromium-watchdog.sh can tell a live
