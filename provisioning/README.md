@@ -396,10 +396,22 @@ sudo rm -f /opt/metarboard-data/positionhistory.db /opt/metarboard-data/setup-at
 sudo rm -rf ~/METARBoard                               # your provisioning checkout, not needed at runtime
 rm -f ~/.bash_history
 sudo systemctl start metarboard
+
+# LAST - this drops the unit off the network (and ends any SSH session):
+# delete the WiFi client profile you connected this bench unit to. Skipping
+# it bakes YOUR network's saved password into every flashed clone, and on
+# the same LAN a clone auto-joins it instead of showing first-boot setup.
+# Keep the "METARBoard Setup" hotspot profile - network-setup recreates it
+# anyway. Do this right before powering down to capture.
+sudo nmcli connection delete "<your-wifi-name>"        # e.g. the network you tested on
 ```
 
 Leave `/opt/metarboard-data/charts`, `aircraft.db`, and `CURRENT_VERSION`
 alone - those are exactly what you want every shipped unit to start with.
+(`settings.json` and `positionhistory.db` reappear immediately as clean
+defaults / an empty DB when the service restarts - that's fine, they hold
+no device-specific state; what matters is that no admin password or saved
+WiFi survives.)
 
 **Do NOT clear `/etc/machine-id` or `/etc/ssh/ssh_host_*` here.** An
 earlier version of this doc did (on the theory that emptying them
