@@ -3,7 +3,7 @@
     "keepaliveintervalmsec": 30000,
     "httpport": 8500,
     "wsport": 8550,
-    "startupzoom": 11,
+    "startupzoom": 10,
     "useOSMonlinemap": false,
     "homeAirport": "KHGR",
     "timezone": "America/New_York",
