@@ -10,6 +10,7 @@ const os = require("os");
 const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const { XMLParser } = require('fast-xml-parser');
 const { unzip, unzipSync } = require('zlib');
+const { version: appVersion } = require('./package.json');
 
 // shpjs ships as an ESM-only package whose UMD fallback also assumes a
 // browser `self` global - `require('shpjs')` resolves to neither a usable
@@ -1036,6 +1037,7 @@ try {
     // actual current hostname/LAN IP, e.g. after a DHCP lease renewal.
     json.deviceHostname = os.hostname();
     json.deviceIp = getLocalIpAddress();
+    json.appVersion = appVersion;
 
     res.writeHead(200);
     res.write(JSON.stringify(json));
