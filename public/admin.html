@@ -243,13 +243,19 @@
       border: 1.5px solid var(--border);
       border-radius: 10px;
       padding: 10px 14px;
-      margin-bottom: 8px;
+      margin-bottom: 22px;
+    }
+
+    #softwareUpdateSection {
+      margin-top: 4px;
+      padding-top: 22px;
+      border-top: 1px solid var(--border);
     }
 
     #checkUpdateStatus {
       font-size: 13px;
       color: var(--muted);
-      margin: 8px 0 22px;
+      margin-top: 10px;
       min-height: 1em;
     }
 
@@ -303,8 +309,6 @@
 
       <div id="settingsForm" style="display: none;">
         <div id="deviceStatus">Loading device status...</div>
-        <button id="checkUpdateBtn" type="button" class="secondary">Check for Updates</button>
-        <div id="checkUpdateStatus"></div>
 
         <div id="bootstrapPasswordSection" style="display: none;">
           <p><strong>No admin password is set yet</strong> - anyone on this network can currently change these settings.</p>
@@ -455,6 +459,19 @@
 
         <button id="saveBtn">Save</button>
         <div id="status"></div>
+
+        <div id="softwareUpdateSection">
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+              <polyline points="21 3 21 9 15 9"/>
+            </svg>
+            Software Updates
+          </div>
+          <p class="help-text">Updates normally install automatically overnight. Use this to check for and apply a new release now.</p>
+          <button id="checkUpdateBtn" type="button" class="secondary">Check for Updates</button>
+          <div id="checkUpdateStatus"></div>
+        </div>
 
         <div id="changePasswordSection" style="display: none;">
           <div class="section-label">
