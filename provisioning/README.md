@@ -453,6 +453,48 @@ removable card - it has to be exposed as a USB mass-storage device:
    (`/dev/rdiskN`, the raw device, is much faster than the buffered
    `/dev/diskN`.) Store that file wherever you keep build artifacts.
 
+**Shrinking the image (recommended).** A raw `dd` captures the entire
+eMMC (~62.5GB), so the image only fits an eMMC that size or larger and is
+slow to flash. [PiShrink](https://github.com/Drewsif/PiShrink) shrinks the
+root partition to its used size and injects a first-boot resize so the
+filesystem auto-expands to fill whatever card it's flashed onto. On the
+v1.9.1 capture this took the image from 59GB→19GB uncompressed and
+18GB→11GB gzipped.
+
+macOS has no native ext4/loop support, so run PiShrink in a Linux
+container. Using [colima](https://github.com/abiosoft/colima) (`brew
+install colima docker`, then `colima start`):
+
+```bash
+# One-time: build a PiShrink image. MUST be based on debian:trixie (or
+# anything with e2fsprogs >= 1.47) - the device's ext4 uses the
+# `orphan_file` feature (FEATURE_C12), and an older e2fsck (e.g. Ubuntu
+# 22.04's 1.46.5) aborts with "unsupported feature(s): FEATURE_C12 /
+# Filesystem still has errors". That looks like corruption but is purely a
+# too-old-tool problem - a newer e2fsck shrinks the exact same image fine.
+curl -fsSLO https://raw.githubusercontent.com/Drewsif/PiShrink/master/pishrink.sh
+cat > Dockerfile <<'EOF'
+FROM debian:trixie-slim
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      parted e2fsprogs util-linux fdisk gzip ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY pishrink.sh /usr/local/bin/pishrink.sh
+RUN chmod +x /usr/local/bin/pishrink.sh
+ENTRYPOINT ["/usr/local/bin/pishrink.sh"]
+EOF
+docker build -t metarboard-pishrink .
+
+# Shrink: decompress, shrink in place, recompress. The colima VM disk is
+# small, so keep the .img on the Mac's filesystem (bind mount) - don't copy
+# the 62GB file into the VM.
+gunzip -k metarboard-golden-v1.img.gz
+docker run --rm --privileged -v "$PWD":/work metarboard-pishrink /work/metarboard-golden-v1.img
+gzip metarboard-golden-v1.img   # -> metarboard-golden-v1.img.gz (now shrunk + auto-expanding)
+```
+
+Capturing from a **cleanly shut-down** device (`sync; sudo systemctl
+poweroff`, never yanked power) keeps the ext4 journal clean and avoids a
+separate class of real fsck errors on top of the version issue above.
+
 **Bulk-flashing new units.** Connecting several jumpered CM5s to one
 powered USB hub before running `rpiboot` lets it expose all of them as
 separate disks at once - `provisioning/flash-cm5.sh` then writes the
