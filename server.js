@@ -792,6 +792,39 @@ try {
         res.end(JSON.stringify({ ok: true }));
     });
 
+    // Manually trigger the OTA update check that normally runs daily via
+    // metarboard-update.timer, so an admin can force an update from
+    // /admin without SSH. The check itself (download + minisign verify +
+    // symlink swap + service restart + health check/rollback) must run as
+    // root, which this process - the unprivileged `metarboard` user with
+    // NoNewPrivileges=yes - can't do directly. Instead it asks systemd to
+    // start the root-owned metarboard-update.service oneshot; a polkit
+    // rule (install/52-metarboard-update.rules) authorizes exactly that
+    // one unit+verb for this user over D-Bus, nothing broader. --no-block
+    // returns immediately rather than blocking up to the unit's 900s
+    // TimeoutStartSec; the caller polls /updatestatus for the outcome
+    // (check-for-update.sh writes "checking" while running, then
+    // up-to-date/success/error). systemd de-duplicates a concurrent
+    // timer-triggered run, so a double-trigger is harmless.
+    app.post('/admin/check-update', (req, res) => {
+        if (!isAdminAuthed(req)) {
+            res.writeHead(401);
+            res.end(JSON.stringify({ error: "Not authenticated" }));
+            return;
+        }
+
+        execFile('systemctl', ['start', '--no-block', 'metarboard-update.service'], (err, stdout, stderr) => {
+            if (err) {
+                console.log("Failed to trigger update check:", (stderr || err.message || "").trim());
+                res.writeHead(502);
+                res.end(JSON.stringify({ error: "Could not start the update check" }));
+                return;
+            }
+            res.writeHead(200);
+            res.end(JSON.stringify({ ok: true }));
+        });
+    });
+
     // Setup-mode-only routes - 404 once setup is complete (SETUP_MODE_FLAG
     // gone), so there's no lingering wifi-scan/connect attack surface on
     // an already-provisioned device.

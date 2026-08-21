@@ -187,6 +187,20 @@
       transform: translateY(1px);
     }
 
+    button.secondary {
+      background: #fff;
+      color: var(--amber-dark);
+      border: 1.5px solid var(--border);
+      box-shadow: none;
+      font-size: 14px;
+      padding: 10px;
+    }
+
+    button.secondary:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
     #status,
     #loginStatus,
     #bootstrapPasswordStatus,
@@ -229,8 +243,18 @@
       border: 1.5px solid var(--border);
       border-radius: 10px;
       padding: 10px 14px;
-      margin-bottom: 22px;
+      margin-bottom: 8px;
     }
+
+    #checkUpdateStatus {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 8px 0 22px;
+      min-height: 1em;
+    }
+
+    #checkUpdateStatus.error { color: var(--red); }
+    #checkUpdateStatus.success { color: var(--green); }
 
     #bootstrapPasswordSection {
       background: #fff8e6;
@@ -279,6 +303,8 @@
 
       <div id="settingsForm" style="display: none;">
         <div id="deviceStatus">Loading device status...</div>
+        <button id="checkUpdateBtn" type="button" class="secondary">Check for Updates</button>
+        <div id="checkUpdateStatus"></div>
 
         <div id="bootstrapPasswordSection" style="display: none;">
           <p><strong>No admin password is set yet</strong> - anyone on this network can currently change these settings.</p>
@@ -482,6 +508,9 @@
     const changePasswordInput = document.getElementById("changePassword");
     const changePasswordBtn = document.getElementById("changePasswordBtn");
     const changePasswordStatusEl = document.getElementById("changePasswordStatus");
+    const deviceStatusEl = document.getElementById("deviceStatus");
+    const checkUpdateBtn = document.getElementById("checkUpdateBtn");
+    const checkUpdateStatusEl = document.getElementById("checkUpdateStatus");
 
     function setStatus(message, isError) {
       statusEl.textContent = message;
@@ -586,16 +615,99 @@
 
     checkAdminSession();
 
+    // Fetch the latest OTA status and render it into the device-status
+    // box; returns the parsed status object (or null on failure) so the
+    // "Check for Updates" poller can inspect it too.
+    function refreshDeviceStatus() {
+      return fetch("/updatestatus", { cache: "no-store" })
+        .then(res => res.json())
+        .then(update => {
+          const version = update.version || "unknown";
+          const when = update.checkedAt ? new Date(update.checkedAt).toLocaleString() : "never";
+          deviceStatusEl.textContent = `Version ${version} - last update check: ${update.status} (${when})`;
+          return update;
+        })
+        .catch(() => null);
+    }
+
+    // Terminal states check-for-update.sh writes when a run finishes
+    // (anything else - notably "checking" - means a run is still in
+    // flight). Keyed to the messages written by write_status/fail there.
+    const UPDATE_TERMINAL_STATES = ["up-to-date", "success", "error"];
+    // A full update (download + npm ci + restart + health check) on a Pi
+    // can take a few minutes; poll patiently before giving up.
+    const UPDATE_POLL_INTERVAL_MS = 3000;
+    const UPDATE_POLL_TIMEOUT_MS = 5 * 60 * 1000;
+
+    function setCheckUpdateStatus(message, cls) {
+      checkUpdateStatusEl.textContent = message;
+      checkUpdateStatusEl.className = cls || "";
+    }
+
+    checkUpdateBtn.addEventListener("click", () => {
+      checkUpdateBtn.disabled = true;
+      setCheckUpdateStatus("Starting update check…", "");
+
+      // Baseline: only a status stamped AFTER we triggered counts as this
+      // run's result, so we never mistake the previously-displayed
+      // outcome for a fresh one (avoids a race where the old terminal
+      // status is read before the script has written "checking").
+      refreshDeviceStatus().then(prev => {
+        const baselineCheckedAt = prev && prev.checkedAt ? prev.checkedAt : null;
+
+        fetch("/admin/check-update", { method: "POST" })
+          .then(res => res.json().then(body => ({ ok: res.ok, body })))
+          .then(({ ok, body }) => {
+            if (!ok) throw new Error(body.error || "Failed to start update check");
+            setCheckUpdateStatus("Checking for updates… this can take a few minutes.", "");
+            pollForResult(baselineCheckedAt, Date.now());
+          })
+          .catch(err => {
+            setCheckUpdateStatus(err.message, "error");
+            checkUpdateBtn.disabled = false;
+          });
+      });
+    });
+
+    function pollForResult(baselineCheckedAt, startedAt) {
+      setTimeout(() => {
+        refreshDeviceStatus().then(update => {
+          // A failed fetch (null) is expected while metarboard.service
+          // restarts mid-update - keep waiting rather than giving up.
+          const isFresh = update && update.checkedAt && update.checkedAt !== baselineCheckedAt;
+          const isTerminal = update && UPDATE_TERMINAL_STATES.includes(update.status);
+
+          if (isFresh && isTerminal) {
+            finishCheckUpdate(update);
+            return;
+          }
+
+          if (Date.now() - startedAt > UPDATE_POLL_TIMEOUT_MS) {
+            setCheckUpdateStatus("Update check is taking longer than expected - it may still be running. Refresh this page shortly to see the result.", "");
+            checkUpdateBtn.disabled = false;
+            return;
+          }
+
+          pollForResult(baselineCheckedAt, startedAt);
+        });
+      }, UPDATE_POLL_INTERVAL_MS);
+    }
+
+    function finishCheckUpdate(update) {
+      checkUpdateBtn.disabled = false;
+      if (update.status === "success") {
+        setCheckUpdateStatus(update.message || `Updated to ${update.version || "the latest release"}.`, "success");
+      }
+      else if (update.status === "up-to-date") {
+        setCheckUpdateStatus("You're already on the latest release.", "success");
+      }
+      else {
+        setCheckUpdateStatus(update.message || "Update check failed.", "error");
+      }
+    }
+
     function loadDeviceStatusAndSettings() {
-    fetch("/updatestatus")
-      .then(res => res.json())
-      .then(update => {
-        const deviceStatusEl = document.getElementById("deviceStatus");
-        const version = update.version || "unknown";
-        const when = update.checkedAt ? new Date(update.checkedAt).toLocaleString() : "never";
-        deviceStatusEl.textContent = `Version ${version} - last update check: ${update.status} (${when})`;
-      })
-      .catch(() => {});
+    refreshDeviceStatus();
 
     fetch("/getsettings")
       .then(res => res.json())

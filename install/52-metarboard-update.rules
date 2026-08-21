@@ -1,0 +1,30 @@
+// Lets the unprivileged, headless `metarboard` service user trigger an
+// on-demand OTA update check (server.js's /admin/check-update route, the
+// "Check for Updates" button on /admin) without an interactive polkit
+// auth prompt - impossible anyway, since this user has no login session
+// for an authentication agent to attach to.
+//
+// The check itself (download + minisign verify + symlink swap + service
+// restart + health check/rollback) must run as root, which the
+// metarboard service user can't do directly - metarboard.service sets
+// NoNewPrivileges=yes, so sudo is blocked. Instead the server asks
+// systemd to start the root-owned metarboard-update.service oneshot
+// (the exact same unit the daily metarboard-update.timer runs), and
+// polkit is what authorizes that StartUnit request over D-Bus - not
+// sudo, so this is compatible with NoNewPrivileges=yes. Same reasoning
+// as 50-metarboard-network.rules / 51-metarboard-hostname.rules.
+//
+// Scoped to exactly that one unit + the "start" verb via action.lookup,
+// NOT a blanket manage-units grant, so this can't be used to
+// start/stop/restart anything else on the system.
+//
+// Installed by setup-pi.sh to /etc/polkit-1/rules.d/52-metarboard-update.rules
+polkit.addRule(function(action, subject) {
+    if (subject.user != "metarboard") return;
+
+    if (action.id == "org.freedesktop.systemd1.manage-units"
+        && action.lookup("unit") == "metarboard-update.service"
+        && action.lookup("verb") == "start") {
+        return polkit.Result.YES;
+    }
+});

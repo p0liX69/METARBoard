@@ -116,6 +116,7 @@ echo -n "${VERSION}" > "${DATA_DIR}/CURRENT_VERSION"
 echo "==> Installing the first-boot network setup + hostname polkit rules"
 cp "${REPO_ROOT}/install/50-metarboard-network.rules" /etc/polkit-1/rules.d/50-metarboard-network.rules
 cp "${REPO_ROOT}/install/51-metarboard-hostname.rules" /etc/polkit-1/rules.d/51-metarboard-hostname.rules
+cp "${REPO_ROOT}/install/52-metarboard-update.rules" /etc/polkit-1/rules.d/52-metarboard-update.rules
 systemctl restart polkit
 
 echo "==> Installing systemd services + journald size cap"

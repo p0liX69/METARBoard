@@ -90,6 +90,12 @@ fi
 CURRENT_VERSION="$(cat "${CURRENT_VERSION_FILE}" 2>/dev/null || echo v0.0.0)"
 log "current version: ${CURRENT_VERSION}"
 
+# Record that a check is in flight before doing any (potentially slow)
+# network work, so /admin's "Check for Updates" button and the fleet
+# dashboard can show progress. Overwritten with the real outcome
+# (up-to-date/success/error) by write_status/fail below.
+write_status "checking" "Checking for updates" "${CURRENT_VERSION}"
+
 WORKDIR="$(mktemp -d /tmp/metarboard-update.XXXXXX)"
 trap 'rm -rf "${WORKDIR}"' EXIT
 
