@@ -1111,10 +1111,6 @@ try {
         nightDimEnabled: (value) => (typeof value === "boolean" ? value : undefined),
         nightDimStart: (value) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : undefined),
         nightDimEnd: (value) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : undefined),
-        nightDimOpacity: (value) => {
-            const opacity = Number(value);
-            return Number.isInteger(opacity) && opacity >= 0 && opacity <= 90 ? opacity : undefined;
-        },
         showTfrOverlay: (value) => (typeof value === "boolean" ? value : undefined),
         showHomeAirspace: (value) => (typeof value === "boolean" ? value : undefined),
         showTraffic: (value) => (typeof value === "boolean" ? value : undefined),

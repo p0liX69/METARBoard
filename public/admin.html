@@ -367,6 +367,7 @@
             <input type="checkbox" id="nightDimEnabled">
             <label for="nightDimEnabled">Dim the display at night</label>
           </div>
+          <p class="help-text">Darkens the screen during the hours below (fades to 80%). Useful for overnight in a quiet lobby.</p>
 
           <div id="nightDimFields" class="field-row" style="margin-top: 14px;">
             <div>
@@ -376,10 +377,6 @@
             <div>
               <label class="field-label" for="nightDimEnd">Until</label>
               <input type="time" id="nightDimEnd">
-            </div>
-            <div>
-              <label class="field-label" for="nightDimOpacity">Strength (0-90%)</label>
-              <input type="number" id="nightDimOpacity" min="0" max="90" step="5">
             </div>
           </div>
         </div>
@@ -500,7 +497,6 @@
     const nightDimEnabledCheckbox = document.getElementById("nightDimEnabled");
     const nightDimStartInput = document.getElementById("nightDimStart");
     const nightDimEndInput = document.getElementById("nightDimEnd");
-    const nightDimOpacityInput = document.getElementById("nightDimOpacity");
     const showTfrOverlayCheckbox = document.getElementById("showTfrOverlay");
     const showHomeAirspaceCheckbox = document.getElementById("showHomeAirspace");
     const showTrafficCheckbox = document.getElementById("showTraffic");
@@ -740,7 +736,6 @@
         nightDimEnabledCheckbox.checked = !!settings.nightDimEnabled;
         nightDimStartInput.value = settings.nightDimStart || "22:00";
         nightDimEndInput.value = settings.nightDimEnd || "06:00";
-        nightDimOpacityInput.value = settings.nightDimOpacity ?? 70;
         showTfrOverlayCheckbox.checked = settings.showTfrOverlay !== false;
         showHomeAirspaceCheckbox.checked = settings.showHomeAirspace !== false;
         showTrafficCheckbox.checked = settings.showTraffic !== false;
@@ -792,12 +787,6 @@
         return;
       }
 
-      const nightDimOpacity = Number(nightDimOpacityInput.value);
-      if (!Number.isInteger(nightDimOpacity) || nightDimOpacity < 0 || nightDimOpacity > 90) {
-        setStatus("Dim strength must be a whole number from 0 to 90.", true);
-        return;
-      }
-
       saveBtn.disabled = true;
       fetch("/savesettings", {
         method: "POST",
@@ -812,7 +801,6 @@
           nightDimEnabled: nightDimEnabledCheckbox.checked,
           nightDimStart: nightDimStartInput.value,
           nightDimEnd: nightDimEndInput.value,
-          nightDimOpacity: nightDimOpacity,
           showTfrOverlay: showTfrOverlayCheckbox.checked,
           showHomeAirspace: showHomeAirspaceCheckbox.checked,
           showTraffic: showTrafficCheckbox.checked,

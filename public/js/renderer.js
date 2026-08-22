@@ -718,6 +718,12 @@ document.body.appendChild(utcClockContainer);
 // support to assume), so "dimming" here means reducing this page's own
 // output via a black overlay - the same approach most software-only
 // night modes use when they don't control real display hardware.
+//
+// Dimming is a simple on/off: when active, dim to a fixed 80% black
+// overlay. (There used to be a 0-90 "strength" knob, but it read
+// backwards to users - they expected a lower number to mean darker - so
+// it was removed in favor of one sensible fixed level.)
+const NIGHT_DIM_OPACITY_PERCENT = 80;
 const nightDimOverlay = document.createElement("div");
 nightDimOverlay.id = "nightDimOverlay";
 document.body.appendChild(nightDimOverlay);
@@ -905,8 +911,7 @@ function updateNightDimOverlay() {
         ? (nowMinutes >= startMinutes && nowMinutes < endMinutes)
         : (nowMinutes >= startMinutes || nowMinutes < endMinutes); // wraps past midnight
 
-    const opacityPercent = Number.isFinite(settings.nightDimOpacity) ? settings.nightDimOpacity : 70;
-    nightDimOverlay.style.opacity = withinWindow ? opacityPercent / 100 : 0;
+    nightDimOverlay.style.opacity = withinWindow ? NIGHT_DIM_OPACITY_PERCENT / 100 : 0;
 }
 
 /**
